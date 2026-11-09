@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { getSessionUser } from "@/lib/access";
-import { prisma } from "@/lib/db";
+import { authorizeSessionApi } from "@/lib/access";
 import { normalizeBdPhone } from "@/lib/format";
 import { OUT_OF_ORDER_REASONS } from "@/lib/queue";
 import {
@@ -69,26 +68,9 @@ const ERROR_STATUS: Record<QueueError["code"], number> = {
   SERIAL_TAKEN: 409,
 };
 
-async function authorize(sessionId: string, write: boolean) {
-  const user = await getSessionUser();
-  if (!user) return { error: Response.json({ ok: false, code: "UNAUTHENTICATED" }, { status: 401 }) };
-  if (!user.organizationId || user.role === "SUPER_ADMIN") {
-    return { error: Response.json({ ok: false, code: "FORBIDDEN" }, { status: 403 }) };
-  }
-  if (user.role === "DOCTOR") {
-    // Doctors see their own sessions, read-only.
-    const own = await prisma.session.count({
-      where: { id: sessionId, organizationId: user.organizationId, doctor: { userId: user.id } },
-    });
-    if (!own) return { error: Response.json({ ok: false, code: "NOT_FOUND" }, { status: 404 }) };
-    if (write) return { error: Response.json({ ok: false, code: "FORBIDDEN" }, { status: 403 }) };
-  }
-  return { user, orgId: user.organizationId };
-}
-
 export async function GET(_req: Request, { params }: RouteContext<"/api/sessions/[id]/queue">) {
   const { id: sessionId } = await params;
-  const auth = await authorize(sessionId, false);
+  const auth = await authorizeSessionApi(sessionId, false);
   if ("error" in auth) return auth.error;
   const view = await getConsoleView(auth.orgId, sessionId);
   if (!view) return Response.json({ ok: false, code: "NOT_FOUND" }, { status: 404 });
@@ -97,7 +79,7 @@ export async function GET(_req: Request, { params }: RouteContext<"/api/sessions
 
 export async function POST(req: Request, { params }: RouteContext<"/api/sessions/[id]/queue">) {
   const { id: sessionId } = await params;
-  const auth = await authorize(sessionId, true);
+  const auth = await authorizeSessionApi(sessionId, true);
   if ("error" in auth) return auth.error;
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));

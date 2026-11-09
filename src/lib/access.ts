@@ -51,3 +51,27 @@ export async function requireOrgUser(roles: Role[]): Promise<{ user: SessionUser
   if (!user.organizationId) redirect(homeFor(user.role));
   return { user, orgId: user.organizationId };
 }
+
+/**
+ * Authorization for the session APIs (console actions + console live view).
+ * Staff of the session's organization; doctors only for their own sessions,
+ * read-only. Returns a ready error Response otherwise.
+ */
+export async function authorizeSessionApi(
+  sessionId: string,
+  write: boolean,
+): Promise<{ user: SessionUser; orgId: string } | { error: Response }> {
+  const user = await getSessionUser();
+  if (!user) return { error: Response.json({ ok: false, code: "UNAUTHENTICATED" }, { status: 401 }) };
+  if (!user.organizationId || user.role === "SUPER_ADMIN") {
+    return { error: Response.json({ ok: false, code: "FORBIDDEN" }, { status: 403 }) };
+  }
+  if (user.role === "DOCTOR") {
+    const own = await prisma.session.count({
+      where: { id: sessionId, organizationId: user.organizationId, doctor: { userId: user.id } },
+    });
+    if (!own) return { error: Response.json({ ok: false, code: "NOT_FOUND" }, { status: 404 }) };
+    if (write) return { error: Response.json({ ok: false, code: "FORBIDDEN" }, { status: 403 }) };
+  }
+  return { user, orgId: user.organizationId };
+}

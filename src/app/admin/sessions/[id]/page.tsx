@@ -48,6 +48,9 @@ export default async function SessionPage({ params }: PageProps<"/admin/sessions
                 {t.session.openConsole}
               </LinkButton>
             )}
+            <LinkButton href={`/display/${session.id}`} variant="ghost" target="_blank">
+              {t.session.openDisplay}
+            </LinkButton>
           </>
         }
       />

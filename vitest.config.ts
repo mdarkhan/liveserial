@@ -8,7 +8,15 @@ export default defineConfig({
   resolve: { alias: { "@": path.resolve(import.meta.dirname, "src") } },
   test: {
     projects: [
-      { extends: true, test: { name: "unit", include: ["tests/unit/**/*.test.ts"] } },
+      {
+        extends: true,
+        test: {
+          name: "unit",
+          include: ["tests/unit/**/*.test.ts"],
+          // Unit tests never touch the DB; this only satisfies db.ts at import time.
+          env: { DATABASE_URL: "postgresql://unit-tests@127.0.0.1:1/never-connects" },
+        },
+      },
       {
         extends: true,
         test: {

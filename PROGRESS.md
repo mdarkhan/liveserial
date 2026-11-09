@@ -8,8 +8,8 @@ Read [docs/BRIEF.md](docs/BRIEF.md) (requirements) and [docs/PLAN.md](docs/PLAN.
 |---|---|---|
 | 0 — Plan | **Approved** (2026-11-10) | Owner chose embedded Postgres for local dev. |
 | 1 — Foundation | **Approved** (2026-11-10) | See "Phase 1" below. |
-| 2 — Queue engine | **Done, awaiting owner review** (2026-11-10) | See "Phase 2" below. |
-| 3 — Live view | Not started | |
+| 2 — Queue engine | **Approved** (2026-11-10) | See "Phase 2" below. |
+| 3 — Live view | **In progress** (WIP commit) | See "Phase 3 — status" below. |
 | 4 — ETA and SMS | Not started | |
 | 5 — Admin and deploy | Not started | |
 
@@ -83,6 +83,24 @@ Arrived → next → next → "ভিতরে গেছেন" → emergency ca
 9. **Console refresh is a 10 s poll for now.** Phase 3 replaces it with SSE + LISTEN/NOTIFY and keeps polling as the fallback.
 10. **Out-of-order reasons** as proposed in Phase 0 (no change requested).
 11. Next's dev badge turned off (it covered the big button). Dev preview pinned to port 3002 in `.claude/launch.json`.
+
+## Phase 3 — status (work in progress)
+
+Done (typecheck + lint clean at last check; unit tests 45/45):
+- `src/lib/snapshot.ts`: load a session once, project per viewer (console / display / patient). Unit tests assert patient + display views contain no names, phones or other links.
+- `src/lib/realtime.ts`: hub with one `LISTEN liveserial` connection (uses `DIRECT_DATABASE_URL` if set, else `DATABASE_URL`), coalesced reloads, 60 s refresh, reconnect with backoff; `sseResponse()` helper with `ping` events every 20 s.
+- Routes: `/api/live/session/[id]?view=console|display` and `/api/live/t/[code]`; `?once=1` returns JSON (polling fallback). Verified with curl: an update reached a patient stream ~0.3 s after "next".
+- `src/lib/use-live.ts`: SSE client hook, 15 s polling fallback, 45 s stale watchdog, retries SSE every 2 min.
+- `/t/[publicCode]` patient page (server-rendered, noindex, no-referrer) — checked at 360px, renders correctly, no horizontal scroll.
+- `/display/[sessionId]` waiting-room page (wake lock, clock) — written, NOT yet checked in a browser.
+- Console now uses the live hook instead of the 10 s poll — NOT yet re-checked in a browser.
+- Admin session page links to the waiting-room screen. Bangla 404 page.
+
+Left for Phase 3:
+1. Check `/display/[id]` in a browser (landscape 1280×720 and portrait tablet) and the console live updates with two tabs.
+2. Playwright e2e (3 flows: console next; patient page updates within 5 s without reload; out-of-order with reason shows in audit). Plan: `playwright.config.ts` using installed Edge (`channel: "msedge"`) to avoid downloading browsers; run against `next start` on port 3100 with the `liveserial_test` DB; global setup creates its own org/users.
+3. Add `DIRECT_DATABASE_URL` (optional) to `.env.example`.
+4. Full verify (typecheck, lint, all tests, build), PROGRESS decisions, final Phase 3 commit.
 
 ## Known issues / notes
 

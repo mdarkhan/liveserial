@@ -16,6 +16,7 @@ import {
 } from "@/lib/queue";
 import type { ConsoleToken, ConsoleView } from "@/lib/snapshot";
 import { sessionTone, tokenTone } from "@/lib/status";
+import { useLive, type LiveMode } from "@/lib/use-live";
 
 const c = t.console;
 
@@ -53,7 +54,6 @@ type Notice = { tone: "success" | "danger" | "warning"; text: string } | null;
 const MAX_ATTEMPTS = 6;
 const backoffMs = (attempt: number) => Math.min(1000 * 2 ** (attempt - 1), 15_000);
 const REQUEST_TIMEOUT_MS = 15_000;
-const POLL_MS = 10_000;
 const CALL_TYPES = new Set(["NEXT", "CALL", "IN_CONSULT", "DONE", "NO_SHOW"]);
 
 function errorText(code: string | undefined): string {
@@ -61,22 +61,24 @@ function errorText(code: string | undefined): string {
 }
 
 export function ConsoleClient({ initial, readOnly }: { initial: ConsoleView; readOnly: boolean }) {
-  const [view, setView] = useState(initial);
+  const sessionId = initial.session.id;
+  // Live view (SSE, falling back to 15 s polling). Action responses feed in through applyView;
+  // older versions are ignored, so a slow stream message can't undo a newer action result.
+  const {
+    data: view,
+    apply: applyView,
+    mode,
+    updatedAt,
+  } = useLive<ConsoleView>(
+    `/api/live/session/${sessionId}?view=console`,
+    initial,
+    (v) => v.session.queueVersion,
+    Date.parse(initial.serverTime),
+  );
   const [pending, setPending] = useState<Pending[]>([]);
   const [notice, setNotice] = useState<Notice>(null);
-  const [lastSync, setLastSync] = useState(() => new Date(initial.serverTime));
   const queueRef = useRef<Pending[]>([]);
   const busyRef = useRef(false);
-  const versionRef = useRef(initial.session.queueVersion);
-  const sessionId = initial.session.id;
-
-  const applyView = useCallback((v: ConsoleView | null | undefined) => {
-    if (!v) return;
-    if (v.session.queueVersion < versionRef.current) return; // stale (e.g. a poll that raced an action)
-    versionRef.current = v.session.queueVersion;
-    setView(v);
-    setLastSync(new Date());
-  }, []);
 
   const flush = () => setPending([...queueRef.current]);
 
@@ -171,31 +173,14 @@ export function ConsoleClient({ initial, readOnly }: { initial: ConsoleView; rea
     void pump();
   };
 
-  // Keep the view fresh (Phase 3 replaces this with live updates + polling fallback).
+  // Back online: send what's waiting right away instead of waiting out the backoff.
   useEffect(() => {
-    const refresh = async () => {
-      if (document.visibilityState !== "visible" || queueRef.current.length > 0) return;
-      try {
-        const res = await fetch(`/api/sessions/${sessionId}/queue`, { cache: "no-store" });
-        if (res.ok) applyView((await res.json()).view);
-      } catch {
-        /* offline — try again next tick */
-      }
-    };
-    const timer = setInterval(refresh, POLL_MS);
-    const onVisible = () => void refresh();
     const onOnline = () => {
       if (queueRef.current[0]?.state === "retrying") void pump();
-      void refresh();
     };
-    document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("online", onOnline);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("online", onOnline);
-    };
-  }, [sessionId, applyView, pump]);
+    return () => window.removeEventListener("online", onOnline);
+  }, [pump]);
 
   // Don't lose unsent actions by closing the tab.
   useEffect(() => {
@@ -256,7 +241,7 @@ export function ConsoleClient({ initial, readOnly }: { initial: ConsoleView; rea
           </div>
           <Badge tone={sessionTone(s.status)}>{t.sessionStatus[s.status]}</Badge>
         </div>
-        <SyncStatus pending={pending} lastSync={lastSync} onRetry={retryFailed} onDiscard={discardFailed} />
+        <SyncStatus pending={pending} mode={mode} updatedAt={updatedAt} onRetry={retryFailed} onDiscard={discardFailed} />
       </header>
 
       <main className="space-y-4 px-4 pt-4">
@@ -555,12 +540,14 @@ export function ConsoleClient({ initial, readOnly }: { initial: ConsoleView; rea
 
 function SyncStatus({
   pending,
-  lastSync,
+  mode,
+  updatedAt,
   onRetry,
   onDiscard,
 }: {
   pending: Pending[];
-  lastSync: Date;
+  mode: LiveMode;
+  updatedAt: number;
   onRetry: () => void;
   onDiscard: () => void;
 }) {
@@ -595,7 +582,10 @@ function SyncStatus({
         <>
           <span aria-hidden="true" className="inline-block size-2.5 rounded-full bg-success" />
           <span className="font-medium text-success">{c.synced}</span>
-          <span className="text-ink-muted">· {c.updatedAt(formatTime(lastSync))}</span>
+          <span className="text-ink-muted">
+            · {mode === "live" ? t.live.live : mode === "polling" ? t.live.polling : t.live.connecting} ·{" "}
+            {c.updatedAt(formatTime(new Date(updatedAt)))}
+          </span>
         </>
       )}
     </p>
