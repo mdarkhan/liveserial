@@ -3,9 +3,10 @@
   "configurations": [
     {
       "name": "liveserial-dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 3000
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "dev", "--port", "3002"],
+      "port": 3002,
+      "autoPort": false
     }
   ]
 }

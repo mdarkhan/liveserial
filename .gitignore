@@ -14,3 +14,4 @@ playwright-report/
 .pgdata/
 *.tsbuildinfo
 next-env.d.ts
+.playwright-mcp/

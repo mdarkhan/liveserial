@@ -155,6 +155,7 @@ export const bnDict = {
     duplicate: "এই ডাক্তারের এই সময়ে আগেই সেশন আছে।",
     empty: "এই তারিখে কোনো সেশন নেই।",
     open: "খুলুন",
+    openConsole: "কনসোল খুলুন",
     tokens: "সিরিয়াল তালিকা",
     noTokens: "এখনো কোনো রোগী যোগ করা হয়নি।",
     showDate: "তারিখ দেখুন",
@@ -166,6 +167,10 @@ export const bnDict = {
     title: "অডিট লগ",
     empty: "এখনো কোনো পরিবর্তন নেই।",
     system: "সিস্টেম",
+    outOfOrder: "ক্রম ভেঙে",
+    reason: "কারণ",
+    jumped: "যাদের আগে ডাকা হলো",
+    auto: "স্বয়ংক্রিয়",
     actions: {
       TOKEN_ADDED: "সিরিয়াল যোগ",
       TOKEN_EDITED: "তথ্য বদল",
@@ -201,9 +206,109 @@ export const bnDict = {
     sessionClosed: "এই সেশন শেষ বা বাতিল হয়েছে।",
   },
 
+  weekdaysShort: ["রবি", "সোম", "মঙ্গল", "বুধ", "বৃহঃ", "শুক্র", "শনি"],
+
   console: {
     title: "আজকের সেশন",
-    comingSoon: "সহকারী কনসোল পরের ধাপে (Phase 2) তৈরি হবে।",
+    titleFor: "সেশন",
+    today: "আজ",
+    tomorrow: "আগামীকাল",
+    backToList: "সব সেশন",
+    readOnly: "শুধু দেখার জন্য — রোগী ডাকতে পারবেন না।",
+
+    // Sync state
+    synced: "সব সেভ হয়েছে",
+    syncing: "সেভ হচ্ছে…",
+    offline: "নেটওয়ার্ক নেই — আবার চেষ্টা হচ্ছে",
+    failed: "সেভ হয়নি",
+    retry: "আবার চেষ্টা করুন",
+    discard: "বাদ দিন",
+    updatedAt: (time: string) => `আপডেট: ${time}`,
+
+    // Now serving
+    nowServing: "এখন দেখছেন",
+    nobodyInside: "এখন কেউ ভিতরে নেই",
+    next: "পরের রোগী ডাকুন",
+    nextPreview: (serial: string) => `পরবর্তী: সিরিয়াল ${serial}`,
+    finishLast: "দেখা শেষ",
+    nobodyWaiting: "আর কেউ অপেক্ষায় নেই",
+    entered: "ভিতরে গেছেন",
+    notHere: "উপস্থিত নেই",
+    done: "দেখা শেষ",
+
+    // Doctor status
+    doctorArrived: "ডাক্তার এসেছেন",
+    doctorBreak: "বিরতি",
+    doctorResume: "আবার শুরু",
+    endSession: "সেশন শেষ",
+    endConfirm: "সেশন শেষ করবেন? যারা এখনো অপেক্ষায় আছেন, তাদের আর ডাকা যাবে না।",
+    runningLate: "দেরি হবে",
+    delayTitle: "ডাক্তার কত দেরিতে আসবেন?",
+    delayMinutes: (m: string) => `${m} মিনিট`,
+    delayNone: "দেরি নেই",
+    delayNow: (m: string) => `ঘোষিত দেরি: ${m} মিনিট`,
+
+    // Lists
+    waiting: "অপেক্ষায়",
+    away: "লাইনে নেই (পরে দেখবেন / উপস্থিত নেই)",
+    doneCount: (n: string) => `দেখা শেষ: ${n} জন`,
+    emptyWaiting: "কেউ অপেক্ষায় নেই। নিচে রোগী যোগ করুন।",
+
+    // Token sheet
+    callNow: "এখনই ডাকুন",
+    skip: "পরে দেখবেন",
+    requeueAfter: "এখনকার রোগীর পরে",
+    requeueEnd: "লাইনের শেষে",
+    requeueTitle: "আবার লাইনে দিন",
+    cancelToken: "সিরিয়াল বাতিল",
+    cancelConfirm: "এই সিরিয়াল বাতিল করবেন?",
+    close: "বন্ধ করুন",
+    phone: "মোবাইল",
+
+    // Out of order
+    outOfOrderTitle: "ক্রম ভেঙে ডাকছেন",
+    outOfOrderBody: (serials: string) => `এর আগে অপেক্ষায় আছেন: ${serials}। কারণ বেছে নিন — এটি ডাক্তারের রিপোর্টে দেখা যাবে।`,
+    reasonNote: "কারণ লিখুন",
+    reasonNoteRequired: "\"অন্যান্য\" বাছলে কারণ লিখতে হবে।",
+    confirmCall: "ডাকুন",
+    reasons: {
+      EMERGENCY: "জরুরি",
+      LATE_ARRIVAL: "আগে সিরিয়াল ছিল, দেরিতে এসেছেন",
+      REPORT_CHECK: "রিপোর্ট দেখানো",
+      ELDERLY_OR_DISABLED: "বয়স্ক / প্রতিবন্ধী",
+      OTHER: "অন্যান্য",
+    },
+
+    // Adding
+    quickAdd: "রোগী যোগ",
+    bulkAdd: "একসাথে অনেকজন",
+    bulkHint: "প্রতি লাইনে একজন: সিরিয়াল (ঐচ্ছিক), নাম, মোবাইল (ঐচ্ছিক)। যেমন: ১২ রহিম উদ্দিন ০১৭১১০০০০০০",
+    bulkPreview: (n: string) => `${n} জন যোগ হবে`,
+    bulkErrors: (n: string) => `${n}টি লাইনে সমস্যা — ঠিক করুন:`,
+    bulkReasons: {
+      NO_NAME: "নাম নেই",
+      BAD_SERIAL: "সিরিয়াল ঠিক নেই",
+      DUPLICATE_SERIAL: "একই সিরিয়াল দুইবার",
+      TOO_LONG: "লেখা অনেক বড়",
+    },
+    bulkSubmit: (n: string) => `${n} জন যোগ করুন`,
+    line: (n: string) => `লাইন ${n}`,
+    addedMany: (n: string) => `${n} জন যোগ হয়েছে`,
+
+    // Errors from the server
+    errors: {
+      CONFLICT: "অন্য কেউ এর মধ্যে পরিবর্তন করেছেন। তালিকা নতুন করে দেখানো হলো।",
+      EMPTY: "কেউ অপেক্ষায় নেই।",
+      SESSION_CLOSED: "এই সেশন শেষ বা বাতিল হয়েছে।",
+      SERIAL_TAKEN: "এই সিরিয়াল আগেই দেওয়া হয়েছে।",
+      REASON_REQUIRED: "কারণ বেছে নিন।",
+      BAD_PHONE: "মোবাইল নম্বর ঠিক নেই।",
+      INVALID: "এই কাজটি এখন করা যাবে না।",
+      NOT_FOUND: "পাওয়া যায়নি।",
+      FORBIDDEN: "এই কাজের অনুমতি নেই।",
+      UNAUTHENTICATED: "আবার লগ ইন করুন।",
+      GENERIC: "কিছু একটা ভুল হয়েছে।",
+    },
   },
 
   validation: {

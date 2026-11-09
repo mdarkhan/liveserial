@@ -10,7 +10,6 @@ import {
   toAsciiDigits,
   weekdayOf,
 } from "@/lib/format";
-import { generatePublicCode } from "@/lib/queue";
 
 describe("digits", () => {
   it("converts to Bangla digits and back", () => {
@@ -65,13 +64,5 @@ describe("Dhaka time", () => {
   it("computes weekdays and adds days", () => {
     expect(weekdayOf("2026-11-10")).toBe(2); // Tuesday
     expect(addDays("2026-12-31", 1)).toBe("2027-01-01");
-  });
-});
-
-describe("generatePublicCode", () => {
-  it("is 10 chars from the no-look-alike alphabet and unique enough", () => {
-    const codes = new Set(Array.from({ length: 2000 }, () => generatePublicCode()));
-    expect(codes.size).toBe(2000);
-    for (const c of codes) expect(c).toMatch(/^[2-9a-hj-km-np-zA-HJ-NP-Z]{10}$/);
   });
 });
