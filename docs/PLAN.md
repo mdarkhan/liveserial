@@ -1,6 +1,6 @@
 # LiveSerial — Phase 0 plan
 
-Status: **proposal, waiting for review.** Source requirements: [BRIEF.md](BRIEF.md).
+Status: **approved 2026-11-10** (local DB: embedded-postgres). Later changes are logged in PROGRESS.md. Source requirements: [BRIEF.md](BRIEF.md).
 Schema: [../prisma/schema.prisma](../prisma/schema.prisma) (validated with Prisma 7.10.1).
 
 ---

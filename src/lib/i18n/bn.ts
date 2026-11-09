@@ -1,0 +1,221 @@
+/**
+ * Every user-facing string lives here. To add English later, create en.ts with
+ * the same shape (typed by `Dict`) and pick one per request.
+ */
+export const bnDict = {
+  appName: "লাইভ সিরিয়াল",
+  tagline: "চেম্বারের লাইভ সিরিয়াল ও অপেক্ষার সময়",
+
+  common: {
+    save: "সেভ করুন",
+    saving: "সেভ হচ্ছে…",
+    saved: "সেভ হয়েছে",
+    cancel: "বাতিল",
+    add: "যোগ করুন",
+    edit: "সম্পাদনা",
+    back: "ফিরে যান",
+    active: "সক্রিয়",
+    inactive: "নিষ্ক্রিয়",
+    activate: "সক্রিয় করুন",
+    deactivate: "নিষ্ক্রিয় করুন",
+    yes: "হ্যাঁ",
+    no: "না",
+    none: "—",
+    optional: "(ঐচ্ছিক)",
+    required: "আবশ্যক",
+    name: "নাম",
+    phone: "মোবাইল নম্বর",
+    address: "ঠিকানা",
+    actions: "কাজ",
+    status: "অবস্থা",
+    date: "তারিখ",
+    time: "সময়",
+    total: "মোট",
+    logout: "লগ আউট",
+    somethingWrong: "কিছু একটা ভুল হয়েছে। আবার চেষ্টা করুন।",
+    notFound: "পাওয়া যায়নি",
+    noAccess: "এই পাতায় আপনার প্রবেশাধিকার নেই।",
+  },
+
+  auth: {
+    loginTitle: "লগ ইন",
+    phone: "মোবাইল নম্বর",
+    phoneHint: "যেমন ০১৭১১০০০০০০",
+    password: "পাসওয়ার্ড",
+    showPassword: "পাসওয়ার্ড দেখান",
+    submit: "লগ ইন করুন",
+    submitting: "লগ ইন হচ্ছে…",
+    invalid: "মোবাইল নম্বর বা পাসওয়ার্ড ভুল।",
+    inactive: "এই অ্যাকাউন্টটি বন্ধ আছে। ক্লিনিকের অ্যাডমিনের সাথে যোগাযোগ করুন।",
+  },
+
+  roles: {
+    SUPER_ADMIN: "সুপার অ্যাডমিন",
+    ORG_ADMIN: "ক্লিনিক অ্যাডমিন",
+    DOCTOR: "ডাক্তার",
+    ASSISTANT: "সহকারী",
+  },
+
+  weekdays: ["রবিবার", "সোমবার", "মঙ্গলবার", "বুধবার", "বৃহস্পতিবার", "শুক্রবার", "শনিবার"],
+
+  sessionStatus: {
+    NOT_STARTED: "শুরু হয়নি",
+    DOCTOR_ARRIVED: "ডাক্তার এসেছেন",
+    RUNNING: "চলছে",
+    ON_BREAK: "বিরতি",
+    ENDED: "শেষ",
+    CANCELLED: "বাতিল",
+  },
+
+  tokenStatus: {
+    WAITING: "অপেক্ষায়",
+    CALLED: "ডাকা হয়েছে",
+    IN_CONSULT: "ভিতরে",
+    DONE: "দেখা শেষ",
+    SKIPPED: "পরে দেখবেন",
+    NO_SHOW: "উপস্থিত নেই",
+    CANCELLED: "বাতিল",
+  },
+
+  nav: {
+    sessions: "সেশন",
+    doctors: "ডাক্তার",
+    chambers: "চেম্বার",
+    schedules: "সময়সূচি",
+    users: "ব্যবহারকারী",
+    organizations: "প্রতিষ্ঠান",
+    console: "কনসোল",
+  },
+
+  org: {
+    title: "প্রতিষ্ঠান",
+    create: "নতুন প্রতিষ্ঠান",
+    name: "প্রতিষ্ঠানের নাম",
+    slug: "সংক্ষিপ্ত নাম (ইংরেজিতে)",
+    slugHint: "ছোট হাতের ইংরেজি অক্ষর, সংখ্যা ও - চিহ্ন। যেমন seba-clinic",
+    slugTaken: "এই সংক্ষিপ্ত নাম আগেই ব্যবহার হয়েছে।",
+    firstAdmin: "প্রথম অ্যাডমিন",
+    users: "ব্যবহারকারী",
+    doctors: "ডাক্তার",
+    empty: "এখনো কোনো প্রতিষ্ঠান নেই।",
+    created: "প্রতিষ্ঠান তৈরি হয়েছে।",
+  },
+
+  doctor: {
+    title: "ডাক্তার",
+    add: "ডাক্তার যোগ করুন",
+    name: "ডাক্তারের নাম",
+    nameHint: "রোগীরা যেভাবে দেখবেন, যেমন ডা. আব্দুল করিম",
+    specialty: "বিশেষজ্ঞতা",
+    loginUser: "লগইন অ্যাকাউন্ট",
+    noLogin: "লগইন নেই",
+    empty: "এখনো কোনো ডাক্তার যোগ করা হয়নি।",
+  },
+
+  chamber: {
+    title: "চেম্বার",
+    add: "চেম্বার যোগ করুন",
+    name: "চেম্বারের নাম",
+    threshold: "\"এখন রওনা দিন\" কতজন বাকি থাকলে",
+    thresholdHint: "রোগীর আগে এতজন বা কম থাকলে রওনা দিতে বলা হবে (১–৫০)।",
+    empty: "এখনো কোনো চেম্বার যোগ করা হয়নি।",
+  },
+
+  schedule: {
+    title: "সময়সূচি",
+    add: "সময়সূচি যোগ করুন",
+    weekday: "বার",
+    startTime: "শুরুর সময়",
+    duplicate: "এই ডাক্তারের এই বারে এই সময়ে আগেই সময়সূচি আছে।",
+    empty: "এখনো কোনো সময়সূচি নেই।",
+  },
+
+  user: {
+    title: "ব্যবহারকারী",
+    add: "ব্যবহারকারী যোগ করুন",
+    role: "ভূমিকা",
+    password: "পাসওয়ার্ড",
+    passwordHint: "কমপক্ষে ৮ অক্ষর",
+    newPassword: "নতুন পাসওয়ার্ড",
+    resetPassword: "পাসওয়ার্ড বদলান",
+    passwordChanged: "পাসওয়ার্ড বদলানো হয়েছে।",
+    linkDoctor: "কোন ডাক্তারের অ্যাকাউন্ট",
+    phoneTaken: "এই মোবাইল নম্বরে আগেই অ্যাকাউন্ট আছে।",
+    cannotDeactivateSelf: "নিজের অ্যাকাউন্ট নিষ্ক্রিয় করা যাবে না।",
+    empty: "এখনো কোনো ব্যবহারকারী নেই।",
+  },
+
+  session: {
+    title: "সেশন",
+    add: "সেশন তৈরি করুন",
+    doctor: "ডাক্তার",
+    chamber: "চেম্বার",
+    scheduledStart: "নির্ধারিত শুরু",
+    patients: "রোগী",
+    duplicate: "এই ডাক্তারের এই সময়ে আগেই সেশন আছে।",
+    empty: "এই তারিখে কোনো সেশন নেই।",
+    open: "খুলুন",
+    tokens: "সিরিয়াল তালিকা",
+    noTokens: "এখনো কোনো রোগী যোগ করা হয়নি।",
+    showDate: "তারিখ দেখুন",
+    cancel: "পুরো সেশন বাতিল করুন",
+    cancelConfirm: "পুরো সেশন বাতিল করবেন? এটি ফিরিয়ে আনা যাবে না এবং অডিট লগে থাকবে।",
+  },
+
+  audit: {
+    title: "অডিট লগ",
+    empty: "এখনো কোনো পরিবর্তন নেই।",
+    system: "সিস্টেম",
+    actions: {
+      TOKEN_ADDED: "সিরিয়াল যোগ",
+      TOKEN_EDITED: "তথ্য বদল",
+      TOKEN_CANCELLED: "সিরিয়াল বাতিল",
+      CALL_NEXT: "পরের রোগী ডাকা",
+      CALL_OUT_OF_ORDER: "ক্রম ভেঙে ডাকা",
+      MARK_IN_CONSULT: "ভিতরে গেছেন",
+      MARK_DONE: "দেখা শেষ",
+      SKIP: "পরে দেখবেন",
+      NO_SHOW: "উপস্থিত নেই",
+      REQUEUE_AFTER_CURRENT: "আবার লাইনে (এখনকার পরে)",
+      REQUEUE_AT_END: "আবার লাইনে (শেষে)",
+      SESSION_STATUS_CHANGED: "সেশনের অবস্থা বদল",
+      DELAY_SET: "দেরির ঘোষণা",
+      DELAY_BROADCAST: "দেরির SMS",
+    },
+  },
+
+  token: {
+    serial: "সিরিয়াল",
+    patientName: "রোগীর নাম",
+    patientPhone: "রোগীর মোবাইল",
+    phoneOptional: "না থাকলে খালি রাখুন — তাহলে SMS যাবে না।",
+    emergency: "জরুরি",
+    quickAdd: "রোগী যোগ করুন",
+    added: (serial: string) => `সিরিয়াল ${serial} যোগ হয়েছে`,
+    serialTaken: (serial: string) => `সিরিয়াল ${serial} আগেই দেওয়া হয়েছে।`,
+    edit: "তথ্য বদলান",
+    cancelToken: "সিরিয়াল বাতিল",
+    cancelConfirm: "এই সিরিয়াল বাতিল করবেন? এটি অডিট লগে থাকবে।",
+    link: "রোগীর লিংক",
+    cannotEditClosed: "এই সিরিয়াল আর বদলানো যাবে না।",
+    sessionClosed: "এই সেশন শেষ বা বাতিল হয়েছে।",
+  },
+
+  console: {
+    title: "আজকের সেশন",
+    comingSoon: "সহকারী কনসোল পরের ধাপে (Phase 2) তৈরি হবে।",
+  },
+
+  validation: {
+    required: "এটি পূরণ করুন।",
+    phone: "সঠিক মোবাইল নম্বর দিন, যেমন ০১৭১১০০০০০০।",
+    password: "পাসওয়ার্ড কমপক্ষে ৮ অক্ষরের হতে হবে।",
+    tooLong: "লেখা অনেক বড়।",
+    number: "সঠিক সংখ্যা দিন।",
+    time: "সঠিক সময় দিন।",
+    date: "সঠিক তারিখ দিন।",
+  },
+} as const;
+
+export type Dict = typeof bnDict;
+export const t = bnDict;

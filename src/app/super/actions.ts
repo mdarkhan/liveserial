@@ -1,0 +1,73 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { requireUser } from "@/lib/access";
+import { prisma } from "@/lib/db";
+import { normalizeBdPhone } from "@/lib/format";
+import { t } from "@/lib/i18n/bn";
+import { fail, isUniqueViolation, parseForm, type ActionResult } from "@/lib/action-result";
+import { createUserWithPassword } from "@/lib/users";
+
+const v = t.validation;
+
+const orgSchema = z.object({
+  orgName: z.string().trim().min(1, v.required).max(120, v.tooLong),
+  slug: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, t.org.slugHint)
+    .max(40, v.tooLong),
+  phone: z
+    .string()
+    .transform((s) => normalizeBdPhone(s))
+    .refine((p): p is string => p !== null, v.phone),
+  adminName: z.string().trim().min(1, v.required).max(120, v.tooLong),
+  password: z.string().min(8, v.password).max(128, v.tooLong),
+});
+
+/** Creates an organization together with its first ORG_ADMIN. */
+export async function createOrganization(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  await requireUser(["SUPER_ADMIN"]);
+  const { data, error } = parseForm(orgSchema, fd);
+  if (error) return error;
+
+  const [slugTaken, phoneTaken] = await Promise.all([
+    prisma.organization.findUnique({ where: { slug: data.slug } }),
+    prisma.user.findUnique({ where: { phoneNumber: data.phone } }),
+  ]);
+  if (slugTaken || phoneTaken) {
+    return fail("", fd, {
+      ...(slugTaken ? { slug: t.org.slugTaken } : {}),
+      ...(phoneTaken ? { phone: t.user.phoneTaken } : {}),
+    });
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const org = await tx.organization.create({ data: { name: data.orgName, slug: data.slug } });
+      await createUserWithPassword(
+        { name: data.adminName, phone: data.phone, role: "ORG_ADMIN", organizationId: org.id, password: data.password },
+        tx,
+      );
+    });
+  } catch (e) {
+    if (isUniqueViolation(e)) return fail(t.org.slugTaken, fd);
+    throw e;
+  }
+  revalidatePath("/super");
+  return { ok: true, message: t.org.created };
+}
+
+export async function toggleOrganization(fd: FormData) {
+  await requireUser(["SUPER_ADMIN"]);
+  const org = await prisma.organization.findUnique({ where: { id: String(fd.get("id")) } });
+  if (!org) return;
+  await prisma.$transaction([
+    prisma.organization.update({ where: { id: org.id }, data: { isActive: !org.isActive } }),
+    // Deactivating an organization signs all its users out.
+    ...(org.isActive ? [prisma.authSession.deleteMany({ where: { user: { organizationId: org.id } } })] : []),
+  ]);
+  revalidatePath("/super");
+}

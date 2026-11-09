@@ -308,7 +308,7 @@ model Token {
   patientPhone     String?
   status           TokenStatus @default(WAITING)
   isEmergency      Boolean     @default(false)
-  /// 10 chars from a 54-char alphabet without look-alikes (~57 bits), crypto-random.
+  /// 10 chars from a 55-char alphabet without look-alikes (~57.8 bits), crypto-random.
   publicCode       String      @unique
   calledAt         DateTime?   @db.Timestamptz(3)
   consultStartedAt DateTime?   @db.Timestamptz(3)
