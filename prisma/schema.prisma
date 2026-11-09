@@ -1,0 +1,409 @@
+// LiveSerial — Prisma schema (Phase 0 proposal, Prisma 7)
+//
+// Conventions
+// - All timestamps are UTC (timestamptz). The UI always displays Asia/Dhaka.
+// - Every tenant-owned table carries organizationId; every query filters on it.
+// - Nothing tenant-owned is hard-deleted: rows are deactivated or CANCELLED.
+// - Raw SQL added to the first migration (Prisma can't express these):
+//     1. QueueEvent is append-only: a trigger rejects UPDATE and DELETE.
+//     2. At most one "now serving" token per session:
+//        UNIQUE ("sessionId") WHERE status IN ('CALLED','IN_CONSULT').
+//     3. Each automatic SMS trigger at most once per token:
+//        UNIQUE ("tokenId","template") WHERE template <> 'DELAY_BROADCAST'.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  ORG_ADMIN
+  DOCTOR
+  ASSISTANT
+}
+
+enum SessionStatus {
+  NOT_STARTED
+  DOCTOR_ARRIVED
+  RUNNING
+  ON_BREAK
+  ENDED
+  CANCELLED
+}
+
+/// CANCELLED is an addition to the brief: for tokens entered by mistake
+/// (duplicate, wrong session). Logged like every other change; never deleted.
+enum TokenStatus {
+  WAITING
+  CALLED
+  IN_CONSULT
+  DONE
+  SKIPPED
+  NO_SHOW
+  CANCELLED
+}
+
+enum QueueAction {
+  TOKEN_ADDED
+  TOKEN_EDITED
+  TOKEN_CANCELLED
+  CALL_NEXT
+  CALL_OUT_OF_ORDER
+  MARK_IN_CONSULT
+  MARK_DONE
+  SKIP
+  NO_SHOW
+  REQUEUE_AFTER_CURRENT
+  REQUEUE_AT_END
+  SESSION_STATUS_CHANGED
+  DELAY_SET
+  DELAY_BROADCAST
+}
+
+enum OutOfOrderReason {
+  EMERGENCY
+  LATE_ARRIVAL
+  REPORT_CHECK
+  ELDERLY_OR_DISABLED
+  OTHER
+}
+
+enum SmsTemplate {
+  TOKEN_CREATED
+  LEAVE_NOW
+  NEXT_UP
+  DELAY_BROADCAST
+}
+
+enum SmsStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+// ─────────────────────────── Tenancy ───────────────────────────
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  phone     String?
+  address   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  users     User[]
+  doctors   Doctor[]
+  chambers  Chamber[]
+  schedules ScheduleTemplate[]
+  sessions  Session[]
+  tokens    Token[]
+  events    QueueEvent[]
+  sms       SmsMessage[]
+}
+
+// ─────────────────── Users & auth (Better Auth) ───────────────────
+// Field names on User / AuthSession / Account / Verification follow Better Auth's
+// core schema + phoneNumber plugin. role / organizationId / isActive are
+// Better Auth "additionalFields" (not user-settable).
+
+model User {
+  id                  String   @id @default(cuid())
+  name                String
+  /// Better Auth requires a unique email. Users log in by phone, so we store a
+  /// placeholder "<phone>@phone.invalid" unless a real one is given.
+  email               String   @unique
+  emailVerified       Boolean  @default(false)
+  image               String?
+  /// Normalized BD mobile: 8801XXXXXXXXX. Login identifier.
+  phoneNumber         String?  @unique
+  phoneNumberVerified Boolean  @default(false)
+  role                Role
+  /// null only for SUPER_ADMIN.
+  organizationId      String?
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime @updatedAt @db.Timestamptz(3)
+
+  organization  Organization? @relation(fields: [organizationId], references: [id])
+  doctor        Doctor?
+  authSessions  AuthSession[]
+  accounts      Account[]
+  queueEvents   QueueEvent[]
+  tokensCreated Token[]
+  smsSent       SmsMessage[]
+
+  @@index([organizationId])
+}
+
+/// Better Auth's "session" model, renamed so it doesn't clash with a chamber Session.
+model AuthSession {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime @db.Timestamptz(3)
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Holds the password hash (providerId = "credential").
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  password              String?
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime? @db.Timestamptz(3)
+  refreshTokenExpiresAt DateTime? @db.Timestamptz(3)
+  scope                 String?
+  createdAt             DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime  @updatedAt @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime @db.Timestamptz(3)
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([identifier])
+}
+
+// ─────────────────────── Doctors & places ───────────────────────
+
+model Doctor {
+  id             String   @id @default(cuid())
+  organizationId String
+  /// Set when the doctor has their own login (role DOCTOR).
+  userId         String?  @unique
+  /// As shown to patients, e.g. "ডা. আব্দুল করিম".
+  name           String
+  specialty      String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
+
+  organization Organization       @relation(fields: [organizationId], references: [id])
+  user         User?              @relation(fields: [userId], references: [id])
+  schedules    ScheduleTemplate[]
+  sessions     Session[]
+
+  @@index([organizationId])
+}
+
+model Chamber {
+  id                String   @id @default(cuid())
+  organizationId    String
+  name              String
+  address           String?
+  /// "এখন রওনা দিন" SMS + banner when people ahead ≤ this.
+  leaveNowThreshold Int      @default(5)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @db.Timestamptz(3)
+
+  organization Organization       @relation(fields: [organizationId], references: [id])
+  schedules    ScheduleTemplate[]
+  sessions     Session[]
+
+  @@index([organizationId])
+}
+
+model ScheduleTemplate {
+  id             String   @id @default(cuid())
+  organizationId String
+  doctorId       String
+  chamberId      String
+  /// 0 = Sunday … 6 = Saturday, in Asia/Dhaka.
+  weekday        Int
+  /// Local Asia/Dhaka wall-clock time, "HH:mm" (e.g. "17:30").
+  startTime      String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  doctor       Doctor       @relation(fields: [doctorId], references: [id])
+  chamber      Chamber      @relation(fields: [chamberId], references: [id])
+  sessions     Session[]
+
+  @@unique([doctorId, weekday, startTime])
+  @@index([organizationId])
+}
+
+// ───────────────────────── Queue ─────────────────────────
+
+/// One doctor's sitting at one chamber on one date.
+model Session {
+  /// Random UUID (v4) — also the unguessable id in /display/[sessionId].
+  id                    String        @id @default(uuid())
+  organizationId        String
+  doctorId              String
+  chamberId             String
+  scheduleTemplateId    String?
+  /// Asia/Dhaka calendar date of the sitting.
+  date                  DateTime      @db.Date
+  scheduledStartAt      DateTime      @db.Timestamptz(3)
+  status                SessionStatus @default(NOT_STARTED)
+  /// "Running late by N minutes". When set (and doctor not arrived), ETA uses
+  /// scheduledStartAt + N instead of the doctor's historical median delay.
+  announcedDelayMinutes Int?
+  doctorArrivedAt       DateTime?     @db.Timestamptz(3)
+  endedAt               DateTime?     @db.Timestamptz(3)
+  /// Serial allocator; bumped while holding the session row lock.
+  nextSerial            Int           @default(1)
+  /// Bumped on every queue change; carried in live updates so clients ignore stale ones.
+  queueVersion          Int           @default(0)
+  createdAt             DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime      @updatedAt @db.Timestamptz(3)
+
+  organization Organization      @relation(fields: [organizationId], references: [id])
+  doctor       Doctor            @relation(fields: [doctorId], references: [id])
+  chamber      Chamber           @relation(fields: [chamberId], references: [id])
+  template     ScheduleTemplate? @relation(fields: [scheduleTemplateId], references: [id])
+  tokens       Token[]
+  events       QueueEvent[]
+  sms          SmsMessage[]
+
+  @@unique([doctorId, scheduledStartAt])
+  @@index([organizationId, date])
+  @@index([chamberId, date])
+}
+
+/// One patient's serial in a session.
+model Token {
+  id               String      @id @default(cuid())
+  organizationId   String
+  sessionId        String
+  /// The number the patient is told. Unique within the session; never changes.
+  serial           Int
+  /// Sort key for "next" (lowest WAITING queueOrder, then serial). Defaults to
+  /// serial. Re-queue "after current" = min(waiting) − 1; "at end" = max + 1.
+  queueOrder       Int
+  patientName      String
+  /// Normalized 8801XXXXXXXXX. null = walk-in without phone → no SMS.
+  patientPhone     String?
+  status           TokenStatus @default(WAITING)
+  isEmergency      Boolean     @default(false)
+  /// 10 chars from a 54-char alphabet without look-alikes (~57 bits), crypto-random.
+  publicCode       String      @unique
+  calledAt         DateTime?   @db.Timestamptz(3)
+  consultStartedAt DateTime?   @db.Timestamptz(3)
+  completedAt      DateTime?   @db.Timestamptz(3)
+  createdById      String?
+  createdAt        DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime    @updatedAt @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  session      Session      @relation(fields: [sessionId], references: [id])
+  createdBy    User?        @relation(fields: [createdById], references: [id])
+  events       QueueEvent[]
+  sms          SmsMessage[]
+
+  @@unique([sessionId, serial])
+  @@index([sessionId, status, queueOrder])
+  @@index([organizationId])
+}
+
+/// Append-only audit log of every queue and session change.
+model QueueEvent {
+  id              BigInt            @id @default(autoincrement())
+  organizationId  String
+  sessionId       String
+  tokenId         String?
+  /// null = system action.
+  actorId         String?
+  action          QueueAction
+  /// A TokenStatus for token actions, a SessionStatus for SESSION_STATUS_CHANGED.
+  fromStatus      String?
+  toStatus        String?
+  /// True when a token was called while someone with a lower queue position was waiting.
+  isOutOfOrder    Boolean           @default(false)
+  reason          OutOfOrderReason?
+  note            String?
+  /// Extra facts, e.g. { "jumpedSerials": [7, 8] }, { "delayMinutes": 30 },
+  /// { "recipients": 18, "segments": 1 }, edited fields before/after.
+  meta            Json?
+  clientRequestId String?
+  createdAt       DateTime          @default(now()) @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  session      Session      @relation(fields: [sessionId], references: [id])
+  token        Token?       @relation(fields: [tokenId], references: [id])
+  actor        User?        @relation(fields: [actorId], references: [id])
+
+  @@index([sessionId, id])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, isOutOfOrder, createdAt])
+}
+
+/// Idempotency: every mutating request carries a client-generated UUID. It is
+/// inserted in the same transaction as the change; a retry finds it and gets
+/// the stored response instead of applying twice. Pruned after 7 days.
+model ClientRequest {
+  id             String   @id
+  organizationId String
+  userId         String
+  action         String
+  response       Json
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([createdAt])
+}
+
+// ───────────────────────── SMS ─────────────────────────
+
+/// Every SMS, automatic or broadcast. Rows are written as QUEUED inside the
+/// queue transaction (outbox) and sent after commit. Basis for per-org billing.
+model SmsMessage {
+  id                String      @id @default(cuid())
+  organizationId    String
+  sessionId         String?
+  tokenId           String?
+  toPhone           String
+  template          SmsTemplate
+  body              String
+  segments          Int
+  isUnicode         Boolean
+  status            SmsStatus   @default(QUEUED)
+  provider          String
+  providerMessageId String?
+  error             String?
+  attempts          Int         @default(0)
+  /// User who sent a DELAY_BROADCAST; null for automatic messages.
+  sentById          String?
+  createdAt         DateTime    @default(now()) @db.Timestamptz(3)
+  sentAt            DateTime?   @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  session      Session?     @relation(fields: [sessionId], references: [id])
+  token        Token?       @relation(fields: [tokenId], references: [id])
+  sentBy       User?        @relation(fields: [sentById], references: [id])
+
+  @@index([organizationId, createdAt])
+  @@index([status, createdAt])
+  @@index([tokenId])
+}
