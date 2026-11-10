@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { projectConsole, projectDisplay, projectPatient, type SessionData } from "@/lib/snapshot";
+import { consultMinutes, projectConsole, projectDisplay, projectPatient, type SessionData } from "@/lib/snapshot";
 import type { SessionStatus, TokenStatus } from "@/generated/prisma/enums";
 
 function session(statuses: TokenStatus[], over: Partial<{ status: SessionStatus; threshold: number }> = {}): SessionData {
@@ -21,6 +21,7 @@ function session(statuses: TokenStatus[], over: Partial<{ status: SessionStatus;
     updatedAt: new Date(),
     doctor: { name: "ডা. করিম" },
     chamber: { name: "চেম্বার ১", leaveNowThreshold: over.threshold ?? 3 },
+    stats: { medianConsultMinutes: null, medianArrivalDelayMinutes: null },
     tokens: statuses.map((status, i) => ({
       id: `t${i + 1}`,
       serial: i + 1,
@@ -30,6 +31,9 @@ function session(statuses: TokenStatus[], over: Partial<{ status: SessionStatus;
       patientPhone: `880171100000${i}`,
       isEmergency: false,
       publicCode: `code${i + 1}xxxxx`,
+      calledAt: null,
+      consultStartedAt: null,
+      completedAt: null,
     })),
   };
 }
@@ -48,6 +52,12 @@ describe("projectPatient", () => {
     const v = projectPatient(session(queue), "code5xxxxx")!;
     expect(v.nowServing).toBe(2);
     expect(v.you).toMatchObject({ serial: 5, status: "WAITING", peopleAhead: 3 });
+  });
+
+  it("gives an ETA range for a waiting patient (default 6 min × people ahead)", () => {
+    // 3 ahead × 6 min = 18 → 15–25
+    expect(projectPatient(session(queue), "code5xxxxx")!.you.eta).toEqual({ low: 15, high: 25, doctorArrived: true });
+    expect(projectPatient(session(queue), "code2xxxxx")!.you.eta).toBeNull();
   });
 
   it("raises 'leave now' at the chamber threshold", () => {
@@ -89,5 +99,17 @@ describe("projectConsole", () => {
     expect(v.away.map((t) => t.serial)).toEqual([8]);
     expect(v.doneCount).toBe(1);
     expect(v.session.queueVersion).toBe(7);
+  });
+});
+
+describe("consultMinutes", () => {
+  const at = (s: number) => new Date(Date.UTC(2026, 10, 10, 11, 0, s));
+  it("measures from entering, else from being called", () => {
+    expect(consultMinutes({ calledAt: at(0), consultStartedAt: at(60), completedAt: at(420) })).toBe(6);
+    expect(consultMinutes({ calledAt: at(0), consultStartedAt: null, completedAt: at(300) })).toBe(5);
+  });
+  it("ignores mis-taps under a minute and missing times", () => {
+    expect(consultMinutes({ calledAt: at(0), consultStartedAt: null, completedAt: at(20) })).toBeNull();
+    expect(consultMinutes({ calledAt: null, consultStartedAt: null, completedAt: at(20) })).toBeNull();
   });
 });

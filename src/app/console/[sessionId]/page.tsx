@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireOrgUser } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { t } from "@/lib/i18n/bn";
+import { appBaseUrl } from "@/lib/sms";
 import { getConsoleView } from "@/lib/snapshot";
 import { ConsoleClient } from "./console-client";
 
@@ -21,5 +22,5 @@ export default async function ConsolePage({ params }: PageProps<"/console/[sessi
   const view = await getConsoleView(orgId, sessionId);
   if (!view) notFound();
 
-  return <ConsoleClient initial={view} readOnly={user.role === "DOCTOR"} />;
+  return <ConsoleClient initial={view} readOnly={user.role === "DOCTOR"} smsBaseUrl={appBaseUrl()} />;
 }

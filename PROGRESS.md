@@ -9,8 +9,8 @@ Read [docs/BRIEF.md](docs/BRIEF.md) (requirements) and [docs/PLAN.md](docs/PLAN.
 | 0 — Plan | **Approved** (2026-11-10) | Owner chose embedded Postgres for local dev. |
 | 1 — Foundation | **Approved** (2026-11-10) | See "Phase 1" below. |
 | 2 — Queue engine | **Approved** (2026-11-10) | See "Phase 2" below. |
-| 3 — Live view | **Done, awaiting owner review** (2026-11-10) | See "Phase 3" below. |
-| 4 — ETA and SMS | Not started | |
+| 3 — Live view | **Approved** (2026-11-10) | See "Phase 3" below. |
+| 4 — ETA and SMS | **Done, awaiting owner review** (2026-11-10) | See "Phase 4" below. |
 | 5 — Admin and deploy | Not started | |
 
 ## How to run (local)
@@ -109,6 +109,31 @@ Arrived → next → next → "ভিতরে গেছেন" → emergency ca
 6. `DIRECT_DATABASE_URL` (optional) is read for LISTEN. It is NOT yet in `.env.example`: edits to env files are blocked by the local permission settings — add this line by hand:
    `# DIRECT_DATABASE_URL="postgresql://user:pass@host:5432/liveserial"  (only if DATABASE_URL goes through a transaction-mode pooler)`
 
+## Phase 4 — what exists
+
+- `src/lib/eta.ts` (pure): minutes per consultation (session median of last 10 → doctor's 30-session median → 6 min), arrived vs not-arrived formulas, range rounding. 18 unit tests cover every branch.
+- Doctor history (`getDoctorStats` in `snapshot.ts`): median consultation and median arrival delay over the doctor's last 30 sessions, cached 10 min per doctor.
+- Patient page shows "আনুমানিক অপেক্ষা: ১৫–২৫ মিনিট" (or "যেকোনো সময় ডাক পড়তে পারে"), with an "approximate" note and, before the doctor arrives, "ডাক্তার আসার পর হিসাব আরও ঠিক হবে।". The live hub re-sends every 60 s, so time-based estimates keep moving.
+- `src/lib/sms-text.ts` (browser-safe): Bangla templates with Bangla digits, patient link, GSM-7 / Unicode segment counter.
+- `src/lib/sms.ts`: `SmsProvider` interface, `ConsoleSmsProvider`, outbox sender (claim QUEUED → SENDING with `FOR UPDATE SKIP LOCKED`, retry after 20 s, max 3 attempts, permanent errors not retried, stuck SENDING rows reclaimed after 2 min), 30 s sweeper.
+- Migration `sms_outbox_sending`: `SmsStatus.SENDING`, `SmsMessage.lastAttemptAt` (new migration; earlier ones untouched).
+- Triggers inside the queue transaction: creation SMS on add; "leave now" when people ahead drops to ≤ the chamber threshold; "you're next" when it drops to ≤ 1. Max 3 automatic SMS per token, never the same trigger twice (DB index + `ON CONFLICT DO NOTHING`).
+- Delay broadcast: console button "দেরির SMS পাঠান" → pick minutes → preview of a real message + "প্রাপক: N জন · প্রতি SMS: S অংশ · মোট: T অংশ" → confirm. Logged as `DELAY_BROADCAST` with recipients and segments; also sets the announced delay if the doctor hasn't arrived.
+
+### Verified
+- Unit 73/73, integration 38/38 (triggers incl. out-of-order jumps, dedupe, walk-ins, outbox send/retry/permanent failure, broadcast), e2e 5/5 (adds ETA on the patient page and the broadcast dialog counts).
+- Browser at 360px: broadcast dialog (17 recipients, 2 segments each, 34 total) → 17 SMS printed by the console provider, each with its own link; patient page ETA "১৫–২৫ মিনিট".
+- Seed on a fresh scratch database: 23 creation SMS SENT (2 walk-ins without phone got none); scratch DB dropped.
+
+## Decisions (Phase 4)
+
+1. **Triggers fire on crossing, not exact equality** (a jump from 6 to 4 still notifies). A patient who is already within the threshold when added gets only the creation SMS. If both thresholds are crossed at once, only "you're next" is sent.
+2. **Consultations under 1 minute (or over 3 hours) are ignored** for the ETA. Found in testing: quick double taps made the median ~0.1 min and the page said "any moment" with 3 people ahead.
+3. **ETA range** = [floor5(ETA), ceil5(1.3 × ETA)], at least 10 minutes wide; under 5 minutes → "যেকোনো সময় ডাক পড়তে পারে". When the doctor is on a break the estimate continues as if running (the break banner is shown).
+4. **Templates are fixed in code** (no template editor in the MVP), so the segment count is shown where a message is composed: the broadcast dialog. Each template is ≤ 2 Unicode segments with a typical doctor name and a ~30-character domain (unit-tested). A shorter production domain may bring some down to 1.
+5. **Delay broadcast is not an automatic SMS**: it can be sent more than once and doesn't count toward the 3-per-token limit. Recipients are WAITING patients with a phone (not the one inside, not skipped/no-show).
+6. **SMS provider is chosen by `SMS_PROVIDER`** (only `console` exists). A real Bangladeshi gateway plugs in by implementing `SmsProvider.send` (return `retryable: false` for permanent errors such as an invalid number).
+
 ## Known issues / notes
 
 - Dev machine (Windows 10) has no Docker / psql; `npm run db:start` (embedded-postgres) is the local DB. Keep it running in its own terminal.
@@ -119,3 +144,5 @@ Arrived → next → next → "ভিতরে গেছেন" → emergency ca
 - No git remote configured. Don't push without asking.
 - `next start` warns that it "does not work with output: standalone"; it works for the e2e run. The Phase 5 Dockerfile will use `node .next/standalone/server.js` as Next recommends.
 - SSE connections are not rate-limited per IP yet (public links are unguessable: ~57.8-bit codes / UUIDs). Revisit before launch if needed.
+- A `pg` deprecation warning ("client.query() when the client is already executing a query") appears in tests; it comes from inside `@prisma/adapter-pg`'s transaction handling, not our code. Harmless now; recheck when upgrading Prisma / pg 9.
+- SMS links use `APP_BASE_URL`; set it to the real HTTPS domain in production (Q8 — a short domain saves SMS segments).

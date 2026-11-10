@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "../src/lib/db";
 import { dateOnly, dhakaDateString, dhakaWallTimeToUtc, normalizeBdPhone } from "../src/lib/format";
 import { addTokens } from "../src/lib/queue-service";
+import { flushOutbox } from "../src/lib/sms";
 import { createUserWithPassword } from "../src/lib/users";
 
 const DEMO_PASSWORD = "demo1234";
@@ -108,6 +109,9 @@ async function main() {
       isEmergency: i === 17,
     })),
   );
+
+  // The creation SMS were queued with the tokens; send them (console provider prints them) before exiting.
+  await flushOutbox();
 
   console.log(`Organization: ${org.name} (${org.slug})`);
   console.log(`  ORG_ADMIN  01711000001 / ${DEMO_PASSWORD}  (${admin.name})`);

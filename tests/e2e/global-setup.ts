@@ -47,7 +47,7 @@ export default async function globalSetup() {
   });
   const tokens = await addTokens(
     { orgId: org.id, userId: assistant.id, sessionId: session.id, clientRequestId: randomUUID() },
-    Array.from({ length: 8 }, (_, i) => ({ name: `রোগী ${bn(i + 1)}`, phone: null })),
+    Array.from({ length: 8 }, (_, i) => ({ name: `রোগী ${bn(i + 1)}`, phone: i >= 6 ? `8801755${String(Math.floor(Math.random() * 1e6)).padStart(6, "0")}` : null })),
   );
   await prisma.$disconnect();
 

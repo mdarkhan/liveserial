@@ -60,6 +60,8 @@ test.describe.serial("critical flows", () => {
 
     await expect(patient.locator("main")).toContainText("আপনার আগে ১ জন — আপনি পরের জন", { timeout: 5_000 });
     await expect(patient.locator("main")).toContainText("এখন রওনা দিন");
+    // ETA as a range: no history yet → default 6 min × 1 ahead = 6 → "৫–১৫ মিনিট".
+    await expect(patient.getByRole("region", { name: "আনুমানিক অপেক্ষা" })).toContainText("৫–১৫ মিনিট");
     // Same page instance: it updated live, not by reloading.
     expect(await patient.evaluate(() => (window as unknown as { __noReload?: boolean }).__noReload)).toBe(true);
     // The patient page never shows other patients' names.
@@ -93,6 +95,20 @@ test.describe.serial("critical flows", () => {
     await expect(row).toContainText("কারণ: রিপোর্ট দেখানো");
     await expect(row).toContainText("যাদের আগে ডাকা হলো: ৩, ৪, ৫");
     await expect(row).toContainText("E2E সহকারী");
+  });
+
+  test("delay broadcast shows recipients and segments before sending", async ({ page }) => {
+    await login(page, env().assistant);
+    await page.goto(`/console/${env().sessionId}`);
+    await page.getByRole("button", { name: "দেরির SMS পাঠান" }).click();
+    const dialog = page.locator("dialog[open]");
+    await dialog.getByRole("button", { name: "৪৫", exact: true }).click();
+    await expect(dialog).toContainText("৪৫ মিনিট দেরিতে আসবেন");
+    // Patients ৭ and ৮ have phones (see global-setup).
+    await expect(dialog).toContainText("প্রাপক: ২ জন");
+    await expect(dialog).toContainText(/প্রতি SMS: [১২] অংশ/);
+    await dialog.getByRole("button", { name: "২ জনকে SMS পাঠান" }).click();
+    await expect(page.getByText("২ জনকে দেরির SMS পাঠানো হচ্ছে")).toBeVisible();
   });
 
   test("waiting-room display shows now serving and the next three", async ({ page }) => {

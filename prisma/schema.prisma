@@ -84,6 +84,8 @@ enum SmsTemplate {
 
 enum SmsStatus {
   QUEUED
+  /// Claimed by a sender; returns to QUEUED (retry) or ends SENT / FAILED.
+  SENDING
   SENT
   FAILED
 }
@@ -393,6 +395,7 @@ model SmsMessage {
   providerMessageId String?
   error             String?
   attempts          Int         @default(0)
+  lastAttemptAt     DateTime?   @db.Timestamptz(3)
   /// User who sent a DELAY_BROADCAST; null for automatic messages.
   sentById          String?
   createdAt         DateTime    @default(now()) @db.Timestamptz(3)

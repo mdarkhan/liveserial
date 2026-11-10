@@ -14,6 +14,7 @@ import {
   type DoctorStatusAction,
   type OutOfOrderReasonCode,
 } from "@/lib/queue";
+import { patientLink, renderSms, smsSegments } from "@/lib/sms-text";
 import type { ConsoleToken, ConsoleView } from "@/lib/snapshot";
 import { sessionTone, tokenTone } from "@/lib/status";
 import { useLive, type LiveMode } from "@/lib/use-live";
@@ -35,6 +36,7 @@ type ActionBody =
   | { type: "REQUEUE"; tokenId: string; mode: "AFTER_CURRENT" | "AT_END" }
   | { type: "DOCTOR"; action: DoctorStatusAction }
   | { type: "DELAY"; minutes: number }
+  | { type: "BROADCAST"; minutes: number }
   | {
       type: "ADD";
       patients: Array<{ name: string; phone?: string | null; serial?: number; isEmergency?: boolean }>;
@@ -60,7 +62,15 @@ function errorText(code: string | undefined): string {
   return (c.errors as Record<string, string>)[code ?? ""] ?? c.errors.GENERIC;
 }
 
-export function ConsoleClient({ initial, readOnly }: { initial: ConsoleView; readOnly: boolean }) {
+export function ConsoleClient({
+  initial,
+  readOnly,
+  smsBaseUrl,
+}: {
+  initial: ConsoleView;
+  readOnly: boolean;
+  smsBaseUrl: string;
+}) {
   const sessionId = initial.session.id;
   // Live view (SSE, falling back to 15 s polling). Action responses feed in through applyView;
   // older versions are ignored, so a slow stream message can't undo a newer action result.
@@ -102,6 +112,9 @@ export function ConsoleClient({ initial, readOnly }: { initial: ConsoleView; rea
         }
         applyView(json?.view);
         if (json?.ok) {
+          if (item.body.type === "BROADCAST") {
+            setNotice({ tone: "success", text: c.broadcastDone(bn((json.result as { recipients: number }).recipients)) });
+          }
           if (item.body.type === "ADD") {
             const n = item.body.patients.length;
             const serials = (json.result as Array<{ serial: number }>).map((r) => r.serial);
@@ -203,6 +216,7 @@ export function ConsoleClient({ initial, readOnly }: { initial: ConsoleView; rea
   const [outOfOrder, setOutOfOrder] = useState<{ token: ConsoleToken; jumped: number[] } | null>(null);
   const [delayOpen, setDelayOpen] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
 
   const tapNext = () => {
     if (!canAct || callBusy) return;
@@ -283,6 +297,11 @@ export function ConsoleClient({ initial, readOnly }: { initial: ConsoleView; rea
             {canAct && s.status === "NOT_STARTED" && (
               <button className={buttonClass("secondary")} onClick={() => setDelayOpen(true)}>
                 {c.runningLate}
+              </button>
+            )}
+            {canAct && (
+              <button className={buttonClass("secondary")} onClick={() => setBroadcastOpen(true)}>
+                {c.broadcast}
               </button>
             )}
             {doctorButtons.includes("END") && (
@@ -513,6 +532,21 @@ export function ConsoleClient({ initial, readOnly }: { initial: ConsoleView; rea
             {c.delayNone}
           </button>
         </div>
+      </Sheet>
+
+      <Sheet open={broadcastOpen} onClose={() => setBroadcastOpen(false)} title={c.broadcastTitle}>
+        {broadcastOpen && (
+          <BroadcastForm
+            view={view}
+            baseUrl={smsBaseUrl}
+            initialMinutes={s.announcedDelayMinutes ?? 30}
+            onCancel={() => setBroadcastOpen(false)}
+            onSend={(minutes) => {
+              act({ type: "BROADCAST", minutes }, c.broadcast);
+              setBroadcastOpen(false);
+            }}
+          />
+        )}
       </Sheet>
 
       <Sheet open={endOpen} onClose={() => setEndOpen(false)} title={c.endSession}>
@@ -971,5 +1005,81 @@ function AddPatients({
         </form>
       )}
     </section>
+  );
+}
+
+/** Pick the delay, see one real message and the exact counts, then confirm. */
+function BroadcastForm({
+  view,
+  baseUrl,
+  initialMinutes,
+  onCancel,
+  onSend,
+}: {
+  view: ConsoleView;
+  baseUrl: string;
+  initialMinutes: number;
+  onCancel: () => void;
+  onSend: (minutes: number) => void;
+}) {
+  const [minutes, setMinutes] = useState(Math.max(10, initialMinutes));
+  const recipients = view.waiting.filter((w) => w.phone);
+  // Public codes are always 10 characters, so these match the real messages' length.
+  const bodies = recipients.map((r) =>
+    renderSms("DELAY_BROADCAST", {
+      serial: r.serial,
+      doctorName: view.session.doctorName,
+      minutes,
+      link: patientLink(baseUrl, "x".repeat(10)),
+    }),
+  );
+  const perSms = bodies.length ? Math.max(...bodies.map((b) => smsSegments(b).segments)) : 0;
+  const total = bodies.reduce((sum, b) => sum + smsSegments(b).segments, 0);
+
+  return (
+    <div className="space-y-4">
+      <fieldset>
+        <legend className="mb-2 font-semibold">{c.broadcastPick}</legend>
+        <div className="grid grid-cols-4 gap-2">
+          {[10, 15, 20, 30, 45, 60, 90, 120].map((m) => (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={minutes === m}
+              onClick={() => setMinutes(m)}
+              className={buttonClass(minutes === m ? "primary" : "secondary", "md", "px-1")}
+            >
+              {bn(m)}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+      {recipients.length === 0 ? (
+        <p className="rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-warning-ink">{c.broadcastNone}</p>
+      ) : (
+        <>
+          <div>
+            <p className="mb-1 text-sm font-semibold text-ink-muted">{c.broadcastPreview}</p>
+            <p className="rounded-lg border border-line bg-canvas px-3 py-2 break-words">{bodies[0]}</p>
+          </div>
+          <p className="rounded-lg border border-primary/30 bg-primary-soft px-3 py-2 font-semibold text-primary">
+            {c.broadcastCounts(bn(recipients.length), bn(perSms), bn(total))}
+          </p>
+        </>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" className={buttonClass("secondary", "lg")} onClick={onCancel}>
+          {t.common.cancel}
+        </button>
+        <button
+          type="button"
+          disabled={recipients.length === 0}
+          className={buttonClass("primary", "lg")}
+          onClick={() => onSend(minutes)}
+        >
+          {c.broadcastSend(bn(recipients.length))}
+        </button>
+      </div>
+    </div>
   );
 }

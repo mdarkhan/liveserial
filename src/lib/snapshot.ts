@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { computeEta, median } from "@/lib/eta";
 import { AWAY, byQueueOrder, nowServing, peopleAhead, waitingInOrder } from "@/lib/queue";
 import type { SessionStatus, TokenStatus } from "@/generated/prisma/enums";
 
@@ -12,6 +13,13 @@ import type { SessionStatus, TokenStatus } from "@/generated/prisma/enums";
  */
 
 export async function loadSessionData(sessionId: string) {
+  const session = await loadSessionRow(sessionId);
+  if (!session) return null;
+  const stats = await getDoctorStats(session.doctorId, session.id);
+  return { ...session, stats };
+}
+
+async function loadSessionRow(sessionId: string) {
   return prisma.session.findUnique({
     where: { id: sessionId },
     include: {
@@ -27,6 +35,9 @@ export async function loadSessionData(sessionId: string) {
           patientPhone: true,
           isEmergency: true,
           publicCode: true,
+          calledAt: true,
+          consultStartedAt: true,
+          completedAt: true,
         },
       },
     },
@@ -34,6 +45,64 @@ export async function loadSessionData(sessionId: string) {
 }
 
 export type SessionData = NonNullable<Awaited<ReturnType<typeof loadSessionData>>>;
+
+// ───────────── doctor history (for ETA) ─────────────
+
+export type DoctorStats = {
+  /** Median consultation minutes over the doctor's last 30 sessions (null if none). */
+  medianConsultMinutes: number | null;
+  /** Median arrival delay in minutes over the last 30 sessions (null if none). */
+  medianArrivalDelayMinutes: number | null;
+};
+
+const HISTORY_SESSIONS = 30;
+const STATS_TTL_MS = 10 * 60_000;
+const statsCache = ((globalThis as unknown as { liveserialStats?: Map<string, { at: number; stats: DoctorStats }> })
+  .liveserialStats ??= new Map());
+
+/** Consultation length in minutes: completed − (entered ?? called). */
+export function consultMinutes(t: { calledAt: Date | null; consultStartedAt: Date | null; completedAt: Date | null }) {
+  const start = t.consultStartedAt ?? t.calledAt;
+  if (!start || !t.completedAt) return null;
+  const m = (t.completedAt.getTime() - start.getTime()) / 60_000;
+  // Under 1 minute is a mis-tap (double "next"), over 3 hours a forgotten tap: neither is a real consultation.
+  return m >= 1 && m < 180 ? m : null;
+}
+
+/** History is recomputed at most every 10 minutes per doctor (it barely moves within a day). */
+export async function getDoctorStats(doctorId: string, excludeSessionId: string): Promise<DoctorStats> {
+  const key = `${doctorId}|${excludeSessionId}`;
+  const hit = statsCache.get(key);
+  if (hit && Date.now() - hit.at < STATS_TTL_MS) return hit.stats;
+
+  const sessions = await prisma.session.findMany({
+    where: { doctorId, id: { not: excludeSessionId }, doctorArrivedAt: { not: null } },
+    orderBy: { scheduledStartAt: "desc" },
+    take: HISTORY_SESSIONS,
+    select: {
+      scheduledStartAt: true,
+      doctorArrivedAt: true,
+      tokens: {
+        where: { completedAt: { not: null } },
+        select: { calledAt: true, consultStartedAt: true, completedAt: true },
+      },
+    },
+  });
+  const delays = sessions.map((s) => (s.doctorArrivedAt!.getTime() - s.scheduledStartAt.getTime()) / 60_000);
+  const consults = sessions.flatMap((s) => s.tokens.map(consultMinutes).filter((m): m is number => m !== null));
+  const stats = { medianConsultMinutes: median(consults), medianArrivalDelayMinutes: median(delays) };
+  statsCache.set(key, { at: Date.now(), stats });
+  return stats;
+}
+
+/** This session's completed consultations, oldest → newest, in minutes. */
+function sessionConsults(d: SessionData): number[] {
+  return d.tokens
+    .filter((t) => t.status === "DONE" && t.completedAt)
+    .sort((a, b) => a.completedAt!.getTime() - b.completedAt!.getTime())
+    .map(consultMinutes)
+    .filter((m): m is number => m !== null);
+}
 
 type SessionInfo = {
   id: string;
@@ -153,6 +222,8 @@ export type PatientView = {
     /** Waiting ahead + the patient inside (1 = you're next). Null unless WAITING. */
     peopleAhead: number | null;
     leaveNow: boolean;
+    /** Estimated wait as a range in minutes (0–0 = any moment). Null unless WAITING. */
+    eta: { low: number; high: number; doctorArrived: boolean } | null;
   };
   leaveNowThreshold: number;
   serverTime: string;
@@ -166,6 +237,19 @@ export function projectPatient(d: SessionData, publicCode: string, now = new Dat
   const session = { status, doctorName, chamberName, scheduledStartAt, doctorArrivedAt, announcedDelayMinutes };
   const open = d.status !== "ENDED" && d.status !== "CANCELLED";
   const ahead = me.status === "WAITING" && open ? peopleAhead(me, d.tokens) : null;
+  const eta =
+    ahead === null
+      ? null
+      : computeEta({
+          now,
+          peopleAhead: ahead,
+          scheduledStartAt: d.scheduledStartAt,
+          doctorArrivedAt: d.doctorArrivedAt,
+          announcedDelayMinutes: d.announcedDelayMinutes,
+          sessionConsultMinutes: sessionConsults(d),
+          doctorMedianConsultMinutes: d.stats.medianConsultMinutes,
+          doctorMedianArrivalDelayMinutes: d.stats.medianArrivalDelayMinutes,
+        });
   return {
     v: d.queueVersion,
     session,
@@ -175,6 +259,7 @@ export function projectPatient(d: SessionData, publicCode: string, now = new Dat
       status: me.status,
       peopleAhead: ahead,
       leaveNow: ahead !== null && ahead <= d.chamber.leaveNowThreshold,
+      eta: eta ? { low: eta.low, high: eta.high, doctorArrived: eta.doctorArrived } : null,
     },
     leaveNowThreshold: d.chamber.leaveNowThreshold,
     serverTime: now.toISOString(),

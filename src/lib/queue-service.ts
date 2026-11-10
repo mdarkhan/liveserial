@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { buildSmsRow, kickOutbox, queueSms, type SmsToQueue } from "@/lib/sms";
 import {
   ACTIVE,
   AWAY,
@@ -7,6 +8,7 @@ import {
   jumpedSerials,
   nextToCall,
   nowServing,
+  peopleAhead,
   requeueOrder,
   sessionTransition,
   type DoctorStatusAction,
@@ -61,7 +63,7 @@ export async function runQueueAction<T extends Prisma.InputJsonValue>(
 ): Promise<T> {
   if (!/^[0-9a-f-]{36}$/i.test(ctx.clientRequestId)) throw new QueueError("INVALID", "Bad client request id");
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const locked = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT id FROM "Session"
       WHERE id = ${ctx.sessionId} AND "organizationId" = ${ctx.orgId}
@@ -76,7 +78,9 @@ export async function runQueueAction<T extends Prisma.InputJsonValue>(
     }
 
     const session = await tx.session.findUniqueOrThrow({ where: { id: ctx.sessionId } });
+    const aheadBefore = await aheadByToken(tx, ctx.sessionId);
     const result = await fn(tx, session);
+    await queueTriggeredSms(tx, ctx, aheadBefore);
 
     const { queueVersion } = await tx.session.update({
       where: { id: ctx.sessionId },
@@ -91,6 +95,56 @@ export async function runQueueAction<T extends Prisma.InputJsonValue>(
     });
     return result;
   });
+  kickOutbox(); // send whatever this change queued, after commit
+  return result;
+}
+
+// ───────────── automatic SMS triggers ─────────────
+
+/** People ahead for every WAITING token (see lib/queue.ts peopleAhead). */
+async function aheadByToken(tx: Tx, sessionId: string): Promise<Map<string, number>> {
+  const tokens = await tx.token.findMany({
+    where: { sessionId },
+    select: { id: true, serial: true, queueOrder: true, status: true },
+  });
+  return new Map(tokens.filter((t) => t.status === "WAITING").map((t) => [t.id, peopleAhead(t, tokens)]));
+}
+
+/**
+ * "Leave now" when people ahead drops to ≤ the chamber threshold, "you're next"
+ * when it drops to ≤ 1. Fires on crossing (a jump from 6 to 4 still notifies),
+ * only for patients who were already waiting before this change (a new or
+ * re-queued patient isn't messaged by it), and each trigger at most once per
+ * token (DB index). If both thresholds are crossed at once, only "you're next".
+ */
+async function queueTriggeredSms(tx: Tx, ctx: QueueCtx, before: Map<string, number>) {
+  const session = await tx.session.findUniqueOrThrow({
+    where: { id: ctx.sessionId },
+    include: {
+      chamber: { select: { leaveNowThreshold: true } },
+      doctor: { select: { name: true } },
+      tokens: { select: { id: true, serial: true, queueOrder: true, status: true, patientPhone: true, publicCode: true } },
+    },
+  });
+  if (CLOSED_SESSION.includes(session.status)) return;
+  const threshold = session.chamber.leaveNowThreshold;
+  const messages: SmsToQueue[] = [];
+  for (const t of session.tokens) {
+    if (t.status !== "WAITING" || !t.patientPhone || !before.has(t.id)) continue;
+    const was = before.get(t.id)!;
+    const now = peopleAhead(t, session.tokens);
+    const base = {
+      organizationId: ctx.orgId,
+      sessionId: session.id,
+      tokenId: t.id,
+      toPhone: t.patientPhone,
+      publicCode: t.publicCode,
+      input: { serial: t.serial, doctorName: session.doctor.name, peopleAhead: now },
+    };
+    if (was > 1 && now <= 1) messages.push({ ...base, template: "NEXT_UP" });
+    else if (was > threshold && now <= threshold) messages.push({ ...base, template: "LEAVE_NOW" });
+  }
+  await queueSms(tx, messages);
 }
 
 // ───────────── helpers (inside a locked transaction) ─────────────
@@ -346,6 +400,43 @@ export async function setDelay(ctx: QueueCtx, minutes: number): Promise<{ minute
   });
 }
 
+/**
+ * Delay broadcast: one SMS to every waiting patient with a phone, e.g.
+ * "ডা. করিম প্রায় ৩০ মিনিট দেরিতে আসবেন।". If the doctor hasn't arrived it also
+ * sets the announced delay (used by the ETA). Not counted as an automatic SMS.
+ */
+export async function broadcastDelay(
+  ctx: QueueCtx,
+  minutes: number,
+): Promise<{ recipients: number; segments: number; minutes: number }> {
+  if (!Number.isInteger(minutes) || minutes < 5 || minutes > 300) throw new QueueError("INVALID", "Bad delay");
+  return runQueueAction(ctx, "DELAY_BROADCAST", async (tx, session) => {
+    assertOpen(session);
+    const doctor = await tx.doctor.findUniqueOrThrow({ where: { id: session.doctorId }, select: { name: true } });
+    const recipients = (await sessionTokens(tx, session.id)).filter((t) => t.status === "WAITING" && t.patientPhone);
+    const messages: SmsToQueue[] = recipients.map((t) => ({
+      organizationId: ctx.orgId,
+      sessionId: session.id,
+      tokenId: t.id,
+      toPhone: t.patientPhone!,
+      template: "DELAY_BROADCAST",
+      publicCode: t.publicCode,
+      input: { serial: t.serial, doctorName: doctor.name, minutes },
+      sentById: ctx.userId,
+    }));
+    await queueSms(tx, messages);
+    const segments = messages.reduce((sum, m) => sum + Number(buildSmsRow(m).segments), 0);
+    if (!session.doctorArrivedAt) {
+      await tx.session.update({ where: { id: session.id }, data: { announcedDelayMinutes: minutes } });
+    }
+    await logEvent(tx, ctx, {
+      action: "DELAY_BROADCAST",
+      meta: { minutes, recipients: recipients.length, segments },
+    });
+    return { recipients: recipients.length, segments, minutes };
+  });
+}
+
 /** Cancels a whole sitting (e.g. doctor not coming). */
 export async function cancelSession(ctx: QueueCtx): Promise<{ id: string }> {
   return runQueueAction(ctx, "CANCEL_SESSION", async (tx, session) => {
@@ -414,6 +505,22 @@ export async function addTokens(ctx: QueueCtx, patients: NewPatient[]): Promise<
     }
 
     await tx.session.update({ where: { id: session.id }, data: { nextSerial: next } });
+
+    // Creation SMS with the live link (patients without a phone get none).
+    const doctor = await tx.doctor.findUniqueOrThrow({ where: { id: session.doctorId }, select: { name: true } });
+    const withPhone = patients.flatMap((p, i) => (p.phone ? [{ phone: p.phone, token: added[i] }] : []));
+    await queueSms(
+      tx,
+      withPhone.map(({ phone, token }) => ({
+        organizationId: ctx.orgId,
+        sessionId: session.id,
+        tokenId: token.id,
+        toPhone: phone,
+        template: "TOKEN_CREATED" as const,
+        publicCode: token.publicCode,
+        input: { serial: token.serial, doctorName: doctor.name },
+      })),
+    );
     return added;
   });
 }

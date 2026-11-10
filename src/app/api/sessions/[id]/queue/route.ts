@@ -4,6 +4,7 @@ import { normalizeBdPhone } from "@/lib/format";
 import { OUT_OF_ORDER_REASONS } from "@/lib/queue";
 import {
   addTokens,
+  broadcastDelay,
   callNext,
   callToken,
   cancelToken,
@@ -40,6 +41,7 @@ const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("CANCEL"), tokenId: id }),
   z.object({ type: z.literal("DOCTOR"), action: z.enum(["ARRIVED", "BREAK", "RESUME", "END"]) }),
   z.object({ type: z.literal("DELAY"), minutes: z.number().int().min(0).max(300) }),
+  z.object({ type: z.literal("BROADCAST"), minutes: z.number().int().min(5).max(300) }),
   z.object({
     type: z.literal("ADD"),
     patients: z
@@ -118,6 +120,9 @@ export async function POST(req: Request, { params }: RouteContext<"/api/sessions
         break;
       case "DELAY":
         result = await setDelay(ctx, body.minutes);
+        break;
+      case "BROADCAST":
+        result = await broadcastDelay(ctx, body.minutes);
         break;
       case "ADD": {
         const patients = [];

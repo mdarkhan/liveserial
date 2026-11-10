@@ -134,6 +134,20 @@ function YourStatus({ view }: { view: PatientView }) {
               {you.peopleAhead === 0 ? p.aheadZero : you.peopleAhead === 1 ? p.aheadOne : p.ahead(bn(you.peopleAhead))}
             </p>
           )}
+          {you.eta && (
+            <section
+              aria-label={p.etaTitle}
+              className="rounded-[var(--radius-card)] border border-line bg-surface px-4 py-4 text-center"
+            >
+              <h2 className="text-sm font-semibold text-ink-muted">{p.etaTitle}</h2>
+              <p className="tabular mt-1 text-3xl font-bold text-ink">
+                {you.eta.high === 0 ? p.etaAnyMoment : p.etaRange(bn(you.eta.low), bn(you.eta.high))}
+              </p>
+              <p className="mt-2 text-sm text-ink-muted">
+                {p.etaNote} {!you.eta.doctorArrived && p.etaNotArrivedNote}
+              </p>
+            </section>
+          )}
         </>
       );
   }
