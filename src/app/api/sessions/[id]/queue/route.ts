@@ -13,9 +13,10 @@ import {
   setDelay,
   setDoctorStatus,
   tokenAction,
+  undoAction,
   type QueueCtx,
 } from "@/lib/queue-service";
-import { getConsoleView } from "@/lib/snapshot";
+import { getConsoleView, loadSessionData } from "@/lib/snapshot";
 
 /**
  * Assistant console API.
@@ -39,6 +40,7 @@ const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.enum(["IN_CONSULT", "DONE", "SKIP", "NO_SHOW"]), tokenId: id }),
   z.object({ type: z.literal("REQUEUE"), tokenId: id, mode: z.enum(["AFTER_CURRENT", "AT_END"]) }),
   z.object({ type: z.literal("CANCEL"), tokenId: id }),
+  z.object({ type: z.literal("UNDO"), undoOf: z.string().uuid() }),
   z.object({ type: z.literal("DOCTOR"), action: z.enum(["ARRIVED", "BREAK", "RESUME", "END"]) }),
   z.object({ type: z.literal("DELAY"), minutes: z.number().int().min(0).max(300) }),
   z.object({ type: z.literal("BROADCAST"), minutes: z.number().int().min(5).max(300) }),
@@ -68,6 +70,8 @@ const ERROR_STATUS: Record<QueueError["code"], number> = {
   EMPTY: 409,
   SESSION_CLOSED: 409,
   SERIAL_TAKEN: 409,
+  UNDO_EXPIRED: 409,
+  UNDO_STALE: 409,
 };
 
 export async function GET(_req: Request, { params }: RouteContext<"/api/sessions/[id]/queue">) {
@@ -115,6 +119,15 @@ export async function POST(req: Request, { params }: RouteContext<"/api/sessions
       case "CANCEL":
         result = await cancelToken(ctx, body.tokenId);
         break;
+      case "UNDO": {
+        // Only where the super admin has switched it on for this sitting.
+        const data = await loadSessionData(sessionId);
+        if (!data || data.organizationId !== auth.orgId || !data.features.CONSOLE_UNDO) {
+          return Response.json({ ok: false, code: "FORBIDDEN" }, { status: 403 });
+        }
+        result = await undoAction(ctx, body.undoOf);
+        break;
+      }
       case "DOCTOR":
         result = await setDoctorStatus(ctx, body.action);
         break;

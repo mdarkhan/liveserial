@@ -1,17 +1,21 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
+import { InstallButton } from "@/components/install-button";
 import { Badge, cx, EmptyState, PageHeader } from "@/components/ui";
 import { requireOrgUser } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { addDays, bn, dateOnly, dhakaDateString, dhakaWallTimeToUtc, formatDate, formatTime, weekdayOf } from "@/lib/format";
 import { t } from "@/lib/i18n/bn";
+import { consoleMetadata, pwaEnabled } from "@/lib/pwa";
 import { sessionTone } from "@/lib/status";
 import type { SessionStatus } from "@/generated/prisma/enums";
 import { openSitting } from "./actions";
 import { doctorNav } from "./doctor-nav";
 
-export const metadata: Metadata = { title: t.console.title };
+export function generateMetadata(): Promise<Metadata> {
+  return consoleMetadata(t.console.title);
+}
 
 type Row = {
   key: string;
@@ -33,6 +37,7 @@ export default async function ConsoleHome({ searchParams }: PageProps<"/console"
   const date = typeof q.date === "string" && days.includes(q.date) ? q.date : today;
   const doctorFilter = user.role === "DOCTOR" ? { doctorId: user.doctor?.id ?? "-" } : {};
   const canOpen = user.role !== "DOCTOR";
+  const installable = await pwaEnabled();
 
   const [sessions, templates] = await Promise.all([
     prisma.session.findMany({
@@ -85,6 +90,8 @@ export default async function ConsoleHome({ searchParams }: PageProps<"/console"
   return (
     <AppShell user={user} nav={user.role === "DOCTOR" ? doctorNav : undefined}>
       <PageHeader title={date === today ? t.console.title : t.console.titleFor} subtitle={formatDate(dateOnly(date))} />
+
+      {installable && <InstallButton />}
 
       <nav aria-label={t.common.date} className="mb-4 flex flex-wrap gap-2">
         {days.map((d, i) => (

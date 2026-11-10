@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { LiveStatus } from "@/components/live-status";
+import { cx } from "@/components/ui";
+import { announceSerial } from "@/lib/announce";
 import { bn, formatTime } from "@/lib/format";
 import { t } from "@/lib/i18n/bn";
 import type { DisplayView } from "@/lib/snapshot";
+import { playChime, unlockAudio } from "@/lib/sound";
 import { useLive } from "@/lib/use-live";
 
 const d = t.display;
@@ -18,6 +21,33 @@ export function DisplayLive({ sessionId, initial }: { sessionId: string; initial
   );
   useWakeLock();
   const clock = useClock(Date.parse(initial.serverTime));
+  const f = data.features;
+  const wantsSound = f.DISPLAY_CHIME || f.DISPLAY_ANNOUNCE;
+  const [soundOn, setSoundOn] = useState(false);
+  const big = useBigMode(f.DISPLAY_CONTROLS);
+  const fullscreen = useFullscreen();
+
+  // A newly called serial replays the pop animation (keyed by callCount)…
+  const [callCount, setCallCount] = useState(0);
+  const [shownServing, setShownServing] = useState(data.nowServing);
+  if (data.nowServing !== shownServing) {
+    setShownServing(data.nowServing);
+    if (data.nowServing !== null && f.DISPLAY_CHIME) setCallCount((n) => n + 1);
+  }
+  // …and, if sound is on, chimes and announces it.
+  const prevServing = useRef(data.nowServing);
+  const speaking = useRef<Promise<void>>(Promise.resolve());
+  useEffect(() => {
+    const prev = prevServing.current;
+    prevServing.current = data.nowServing;
+    if (data.nowServing === null || data.nowServing === prev || !soundOn) return;
+    const serial = data.nowServing;
+    // One after another, so two quick calls don't talk over each other.
+    speaking.current = speaking.current.then(async () => {
+      if (f.DISPLAY_CHIME) await playChime();
+      if (f.DISPLAY_ANNOUNCE) await announceSerial(serial, d.announce(bn(serial)));
+    });
+  }, [data.nowServing, f.DISPLAY_CHIME, f.DISPLAY_ANNOUNCE, soundOn]);
 
   const statusText =
     data.status === "CANCELLED"
@@ -46,38 +76,182 @@ export function DisplayLive({ sessionId, initial }: { sessionId: string; initial
         </p>
       )}
 
-      <div className="grid flex-1 grid-cols-1 gap-[3vmin] py-[3vmin] landscape:grid-cols-[3fr_2fr]">
+      <div className={cx("grid flex-1 grid-cols-1 gap-[3vmin] py-[3vmin]", !big.on && "landscape:grid-cols-[3fr_2fr]")}>
         <section
+          key={`now-${callCount}`}
           aria-label={d.nowServing}
-          className="flex flex-col items-center justify-center rounded-[3vmin] bg-primary p-[2vmin] text-white"
+          className={cx(
+            "flex flex-col items-center justify-center rounded-[3vmin] bg-primary p-[2vmin] text-white",
+            callCount > 0 && "panel-flash",
+          )}
         >
-          <h2 className="text-[6vmin] font-semibold">{d.nowServing}</h2>
-          <p className="tabular text-[32vmin] font-bold leading-none" aria-live="polite">
+          <h2 className={cx("font-semibold", big.on ? "text-[7vmin]" : "text-[6vmin]")}>{d.nowServing}</h2>
+          <p
+            className={cx(
+              "tabular font-bold leading-none",
+              big.on ? "text-[36vmin]" : "text-[32vmin]",
+              callCount > 0 && "serial-pop",
+            )}
+            aria-live="polite"
+          >
             {data.nowServing !== null ? bn(data.nowServing) : "—"}
           </p>
         </section>
 
-        <section aria-label={d.next} className="flex flex-col rounded-[3vmin] border-2 border-line bg-canvas p-[2vmin]">
-          <h2 className="text-center text-[5vmin] font-semibold text-ink-muted">{d.next}</h2>
-          {data.next.length === 0 ? (
-            <p className="flex flex-1 items-center justify-center text-center text-[4vmin] text-ink-muted">{d.noneWaiting}</p>
-          ) : (
-            <ol className="flex flex-1 flex-col justify-around">
-              {data.next.map((n) => (
-                <li key={n} className="tabular text-center text-[12vmin] font-bold leading-none text-ink">
-                  {bn(n)}
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
+        {big.on ? (
+          <section
+            aria-label={d.next}
+            className="rounded-[3vmin] border-2 border-line bg-canvas px-[3vmin] py-[1.5vmin] text-center"
+          >
+            <p className="tabular text-[7.5vmin] font-bold leading-tight">
+              <span className="text-[6vmin] font-semibold text-ink-muted">{d.next}: </span>
+              {data.next.length === 0 ? d.noneWaiting : data.next.map((n) => bn(n)).join(" · ")}
+            </p>
+          </section>
+        ) : (
+          <section aria-label={d.next} className="flex flex-col rounded-[3vmin] border-2 border-line bg-canvas p-[2vmin]">
+            <h2 className="text-center text-[5vmin] font-semibold text-ink-muted">{d.next}</h2>
+            {data.next.length === 0 ? (
+              <p className="flex flex-1 items-center justify-center text-center text-[4vmin] text-ink-muted">
+                {d.noneWaiting}
+              </p>
+            ) : (
+              <ol className="flex flex-1 flex-col justify-around">
+                {data.next.map((n) => (
+                  <li key={n} className="tabular text-center text-[12vmin] font-bold leading-none text-ink">
+                    {bn(n)}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+        )}
       </div>
 
-      <footer className="text-[2.2vmin] text-ink-muted">
-        <LiveStatus mode={mode} updatedAt={updatedAt} />
+      <footer className="flex flex-wrap items-center justify-between gap-[1.5vmin] text-[2.2vmin] text-ink-muted">
+        <LiveStatus mode={mode} updatedAt={updatedAt} className="justify-start" />
+        {(wantsSound || f.DISPLAY_CONTROLS) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {wantsSound &&
+              (soundOn ? (
+                <ControlButton onClick={() => setSoundOn(false)} pressed>
+                  {d.soundIsOn}
+                </ControlButton>
+              ) : (
+                <ControlButton
+                  onClick={async () => {
+                    await unlockAudio();
+                    setSoundOn(true);
+                  }}
+                  attention
+                  title={d.soundOnHint}
+                >
+                  {d.soundOn}
+                </ControlButton>
+              ))}
+            {f.DISPLAY_CONTROLS && (
+              <>
+                <ControlButton onClick={big.toggle} pressed={big.on}>
+                  {big.on ? d.normalMode : d.bigMode}
+                </ControlButton>
+                {fullscreen.supported && (
+                  <ControlButton onClick={fullscreen.toggle}>
+                    {fullscreen.on ? d.exitFullscreen : d.fullscreen}
+                  </ControlButton>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </footer>
     </main>
   );
+}
+
+function ControlButton({
+  onClick,
+  pressed,
+  attention,
+  title,
+  children,
+}: {
+  onClick: () => void;
+  pressed?: boolean;
+  attention?: boolean;
+  title?: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={pressed}
+      title={title}
+      className={cx(
+        "min-h-12 rounded-lg border-2 px-4 text-base font-semibold",
+        attention
+          ? "animate-pulse border-primary bg-primary text-white motion-reduce:animate-none"
+          : pressed
+            ? "border-primary bg-primary-soft text-primary"
+            : "border-line-strong bg-surface text-ink hover:bg-canvas",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+const BIG_KEY = "ls-display-big";
+const BIG_EVENT = "ls-display-big-change";
+
+function readBig(): boolean {
+  try {
+    return localStorage.getItem(BIG_KEY) === "1";
+  } catch {
+    return false; // storage blocked: normal size
+  }
+}
+
+function subscribeBig(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  window.addEventListener(BIG_EVENT, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(BIG_EVENT, onChange);
+  };
+}
+
+/** "Big numbers" mode for a large room; remembered on this TV. */
+function useBigMode(allowed: boolean) {
+  const on = useSyncExternalStore(subscribeBig, readBig, () => false);
+  const toggle = useCallback(() => {
+    try {
+      localStorage.setItem(BIG_KEY, readBig() ? "0" : "1");
+    } catch {
+      /* storage blocked: nothing to remember */
+    }
+    window.dispatchEvent(new Event(BIG_EVENT));
+  }, []);
+  return { on: allowed && on, toggle };
+}
+
+function subscribeFullscreen(onChange: () => void) {
+  document.addEventListener("fullscreenchange", onChange);
+  return () => document.removeEventListener("fullscreenchange", onChange);
+}
+
+function useFullscreen() {
+  const on = useSyncExternalStore(subscribeFullscreen, () => !!document.fullscreenElement, () => false);
+  const supported = useSyncExternalStore(
+    subscribeFullscreen,
+    () => typeof document.documentElement.requestFullscreen === "function",
+    () => false,
+  );
+  const toggle = useCallback(() => {
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    else void document.documentElement.requestFullscreen().catch(() => {});
+  }, []);
+  return { on, supported, toggle };
 }
 
 /** Keep a TV/tablet screen on while the page is visible (where the browser supports it). */

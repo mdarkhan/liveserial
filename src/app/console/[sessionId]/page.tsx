@@ -3,11 +3,14 @@ import { notFound } from "next/navigation";
 import { requireOrgUser } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { t } from "@/lib/i18n/bn";
+import { consoleMetadata } from "@/lib/pwa";
 import { appBaseUrl } from "@/lib/sms";
 import { getConsoleView } from "@/lib/snapshot";
 import { ConsoleClient } from "./console-client";
 
-export const metadata: Metadata = { title: t.nav.console };
+export function generateMetadata(): Promise<Metadata> {
+  return consoleMetadata(t.nav.console);
+}
 
 export default async function ConsolePage({ params }: PageProps<"/console/[sessionId]">) {
   const { user, orgId } = await requireOrgUser(["ORG_ADMIN", "ASSISTANT", "DOCTOR"]);

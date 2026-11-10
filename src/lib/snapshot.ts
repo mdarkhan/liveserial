@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { computeEta, median } from "@/lib/eta";
+import { resolveFeatures, type FeatureFlags } from "@/lib/features";
 import { AWAY, byQueueOrder, nowServing, peopleAhead, waitingInOrder } from "@/lib/queue";
 import type { SessionStatus, TokenStatus } from "@/generated/prisma/enums";
 
@@ -16,14 +17,17 @@ export async function loadSessionData(sessionId: string) {
   const session = await loadSessionRow(sessionId);
   if (!session) return null;
   const stats = await getDoctorStats(session.doctorId, session.id);
-  return { ...session, stats };
+  // Optional features for this sitting: the doctor's override, else the organization's.
+  const features = resolveFeatures(session.organization.features, session.doctor.features);
+  return { ...session, stats, features };
 }
 
 async function loadSessionRow(sessionId: string) {
   return prisma.session.findUnique({
     where: { id: sessionId },
     include: {
-      doctor: { select: { name: true } },
+      organization: { select: { features: true } },
+      doctor: { select: { name: true, features: true } },
       chamber: { select: { name: true, leaveNowThreshold: true } },
       tokens: {
         select: {
@@ -147,6 +151,7 @@ export type ConsoleView = {
   doneCount: number;
   cancelledCount: number;
   total: number;
+  features: Pick<FeatureFlags, "CONSOLE_UNDO" | "CONSOLE_LOOKUP">;
   serverTime: string;
 };
 
@@ -171,6 +176,7 @@ export function projectConsole(d: SessionData, now = new Date()): ConsoleView {
     doneCount: d.tokens.filter((t) => t.status === "DONE").length,
     cancelledCount: d.tokens.filter((t) => t.status === "CANCELLED").length,
     total: d.tokens.length,
+    features: { CONSOLE_UNDO: d.features.CONSOLE_UNDO, CONSOLE_LOOKUP: d.features.CONSOLE_LOOKUP },
     serverTime: now.toISOString(),
   };
 }
@@ -192,6 +198,7 @@ export type DisplayView = {
   scheduledStartAt: string;
   nowServing: number | null;
   next: number[];
+  features: Pick<FeatureFlags, "DISPLAY_CHIME" | "DISPLAY_ANNOUNCE" | "DISPLAY_CONTROLS">;
   serverTime: string;
 };
 
@@ -206,6 +213,11 @@ export function projectDisplay(d: SessionData, now = new Date()): DisplayView {
     next: waitingInOrder(d.tokens)
       .slice(0, 3)
       .map((t) => t.serial),
+    features: {
+      DISPLAY_CHIME: d.features.DISPLAY_CHIME,
+      DISPLAY_ANNOUNCE: d.features.DISPLAY_ANNOUNCE,
+      DISPLAY_CONTROLS: d.features.DISPLAY_CONTROLS,
+    },
     serverTime: now.toISOString(),
   };
 }
@@ -226,6 +238,9 @@ export type PatientView = {
     eta: { low: number; high: number; doctorArrived: boolean } | null;
   };
   leaveNowThreshold: number;
+  /** Patients already seen in this sitting (a count only) — for the progress bar. */
+  doneCount: number;
+  features: Pick<FeatureFlags, "PATIENT_PROGRESS" | "PATIENT_ALERT" | "PATIENT_UPDATED_AGO">;
   serverTime: string;
 };
 
@@ -262,6 +277,12 @@ export function projectPatient(d: SessionData, publicCode: string, now = new Dat
       eta: eta ? { low: eta.low, high: eta.high, doctorArrived: eta.doctorArrived } : null,
     },
     leaveNowThreshold: d.chamber.leaveNowThreshold,
+    doneCount: d.tokens.filter((t) => t.status === "DONE").length,
+    features: {
+      PATIENT_PROGRESS: d.features.PATIENT_PROGRESS,
+      PATIENT_ALERT: d.features.PATIENT_ALERT,
+      PATIENT_UPDATED_AGO: d.features.PATIENT_UPDATED_AGO,
+    },
     serverTime: now.toISOString(),
   };
 }

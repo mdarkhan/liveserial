@@ -12,6 +12,7 @@ Read [docs/BRIEF.md](docs/BRIEF.md) (requirements) and [docs/PLAN.md](docs/PLAN.
 | 3 — Live view | **Approved** (2026-11-10) | See "Phase 3" below. |
 | 4 — ETA and SMS | **Approved** (2026-11-10) | See "Phase 4" below. |
 | 5 — Admin and deploy | **Done, awaiting owner review** (2026-11-10) | See "Phase 5" below. Deployed to FlyNode 2026-11-10 (see "Deployment"). |
+| 6 — Optional UX features | **Done, awaiting owner review** (2026-11-10) | See "Phase 6" below. Not deployed yet. |
 
 ## How to run (local)
 
@@ -213,6 +214,104 @@ Arrived → next → next → "ভিতরে গেছেন" → emergency ca
 - **SMS:** only printed to the FlyNode runtime log until a Bangladeshi gateway is added.
 - **Custom domain:** when added, change `APP_BASE_URL` to match.
 
+## Phase 6 — optional UX features (owner request, 2026-11-10)
+
+The owner asked for nine improvements, each switched on or off by the super admin per organization, with per-doctor overrides.
+
+- **Switches:** `/super/orgs/[id]` (organization name or "ফিচার" in `/super`).
+  - **Organization:** a checkbox per feature, plus "সব চালু" / "সব বন্ধ".
+  - **Doctor:** per feature, "প্রতিষ্ঠানের মতো" / "চালু" / "বন্ধ".
+  - **Storage:** JSON on `Organization.features` and `Doctor.features`. The rules are in `src/lib/features.ts`:
+    - everything is off unless switched on;
+    - a doctor override beats the organization setting;
+    - "install on home screen" is organization-only.
+  - **Delivery:** the effective flags travel inside each live view (patient, TV, console), so a change reaches open pages within a minute (the server's refresh) or on reload.
+- **Patient page (`/t/…`):**
+  - `PATIENT_PROGRESS`:
+    - a bar showing patients seen vs. people ahead;
+    - at ≤ 3 ahead, the page turns amber with "প্রস্তুত থাকুন";
+    - at ≤ 1 ahead, it turns green.
+  - `PATIENT_ALERT`: a "সতর্কতা চালু করুন" button.
+    - While the page is open, it beeps and vibrates once when 2 people are left ahead, and again (longer) when the patient is called.
+    - Web Audio, so there are no files to download.
+  - `PATIENT_UPDATED_AGO`: shows "সর্বশেষ আপডেট: … সেকেন্ড আগে", and a warning when nothing has arrived for 60 s.
+- **Waiting-room TV (`/display/…`):**
+  - `DISPLAY_CHIME`: when a new serial is called, the number pops in and the panel flashes. With sound on, a "ding-dong" plays.
+  - `DISPLAY_ANNOUNCE`: "সিরিয়াল ১২, ভেতরে আসুন".
+    - Uses recorded files if present in `public/audio/bn/` (`serial.mp3`, `1.mp3`…`999.mp3`, `enter.mp3`).
+    - Otherwise uses the device's Bangla voice, if it has one.
+    - Otherwise nothing is announced (the chime still plays).
+  - `DISPLAY_CONTROLS`: "বড় হরফ" (remembered per TV) and "ফুলস্ক্রিন" buttons.
+  - **Sound needs one tap:** browsers require a tap before playing sound, so the TV shows a pulsing "শব্দ চালু করুন" button.
+- **Assistant console:**
+  - `CONSOLE_UNDO`: after these actions, a toast offers "পূর্বাবস্থায় ফেরান" for 5 seconds:
+    - next / call;
+    - entered / done;
+    - skip / no-show;
+    - cancel.
+    - Server side: `undoAction` in `queue-service.ts`.
+  - `CONSOLE_LOOKUP`: the phone field comes first. Once it holds a full number, the last name used with that phone in this organization fills in (`GET /api/sessions/[id]/lookup`).
+  - `CONSOLE_PWA`:
+    - `/app.webmanifest`, PNG icons in `public/icons/`, and iOS home-screen tags.
+    - These are added only to console pages of organizations with the switch on.
+    - A "হোম স্ক্রিনে যোগ করুন" bar on `/console`, or the Safari steps on iPhone.
+- **Migrations** (new, not edits):
+  - `20261110150000_features_and_undo`: feature JSON columns and the `UNDO` queue action.
+  - `20261110150100_token_phone_index`: lookup index.
+- **Dockerfile** now copies `public/` (icons, optional audio).
+- **Demo seed:** turns every feature on for the demo clinic (new databases only).
+
+### Verified
+- tsc clean, ESLint clean.
+- Vitest 140/140 (19 new). They cover:
+  - flag rules and the form parsing;
+  - each view carries only its own flags, and they are off by default;
+  - undo:
+    - "next", including going back to "not started";
+    - skip, no-show and done;
+    - refused after any later change, when repeated, for another user, after the window, for a non-undoable action, and across tenants;
+    - idempotent by its own request id;
+    - an undone out-of-order call leaves the daily report.
+- E2E 5/5 (production build).
+- Click-through in the browser, dev DB, temporary super admin removed afterwards:
+  - **Super admin at 360px:**
+    - "সব চালু" saved all nine;
+    - a doctor override ("বন্ধ" for the progress bar) hid the bar on that doctor's patient page only;
+    - setting it back to inherit showed it again.
+    - Fixed: the organization list squeezed the name column at 360px once the "ফিচার" link was added; the buttons now wrap to their own row.
+  - **Patient page at 360px:** amber tint, "প্রস্তুত থাকুন", and the bar "দেখা শেষ ৭ জন · আপনার আগে ৩ জন". After switching the alert on, an assistant's "next" (3 → 2 ahead) fired the vibration pattern.
+  - **Console at 360px:**
+    - "next" showed the toast "হয়েছে: পরের রোগী ডাকুন · সিরিয়াল ১০";
+    - "পূর্বাবস্থায় ফেরান" brought back serial ৯ with "ফেরানো হয়েছে";
+    - typing a known phone filled "আনোয়ার হোসেন" with "আগের রোগী — নাম বসানো হয়েছে";
+    - the manifest and Apple tags were present, and a simulated install event showed the install bar.
+  - **TV:**
+    - a new call popped the number and flashed the panel;
+    - it looked for the recorded files (none yet) and found no Bangla voice on this PC, so only the chime would play here;
+    - "বড় হরফ" was remembered across reload;
+    - fixed: big mode overflowed 1280×720 by 36px; now it fits;
+    - no horizontal scroll at 360px.
+- **Not verified:**
+  - Actually hearing the chime or alert, because the test browser had no tap/sound.
+  - Installing on a real phone.
+  - Announcing with a real Bangla voice or recorded files.
+
+## Decisions (Phase 6)
+
+1. **Off by default, everywhere.** Existing organizations see no change until the super admin switches features on. The demo seed switches all of them on.
+2. **Doctor override = three states** (same as organization / on / off), stored only when different. "Install on home screen" is organization-only, because the console isn't per doctor.
+3. **Undo is the reverse of exactly one action by the same user:**
+   - It is refused if anything else happened in that session afterwards, so it never overwrites another person's change.
+   - The console offers it for 5 s; the server accepts it for 30 s (slow networks).
+   - Each reversal is logged as an `UNDO` event (the original events stay; the log is append-only).
+   - An undone out-of-order call no longer counts in the report.
+   - SMS already queued by the undone action (e.g. "you're next") are not recalled.
+   - Not offered for: adding patients (use cancel), doctor status, delay, broadcast.
+4. **Returning-patient lookup** searches only this organization's serials (newest first, cancelled ignored). It never overwrites a name the assistant already typed; it offers "এই নাম দিন" instead.
+5. **Patient alert:** sound needs a tap (browser rule), so it is an explicit button, and it lasts while the page is open. "Ready" at ≤ 3 ahead; the sound plays at ≤ 2 and when called.
+6. **Announcements:** recorded audio is preferred, because Bangla text-to-speech is missing on many TVs. Until the clinic adds recordings, devices with a Bangla voice speak; others only chime.
+7. **Install on home screen** is a web app manifest only, with no service worker or offline cache (not a native app; BRIEF scope).
+
 ## Known issues / notes
 
 - Dev machine (Windows 10) has no Docker / psql; `npm run db:start` (embedded-postgres) is the local DB. Keep it running in its own terminal.
@@ -233,3 +332,4 @@ Arrived → next → next → "ভিতরে গেছেন" → emergency ca
 
   README lists every variable.
 - Open question: Q8 (production domain). Q2 answered: direct connection.
+- Recorded announcement audio (`public/audio/bn/serial.mp3`, `1.mp3`…, `enter.mp3`) has to come from the clinic/owner; until then TVs without a Bangla voice only chime.

@@ -141,8 +141,20 @@ export async function getDailyReport(orgId: string, date: string, doctorId?: str
       },
     },
   });
+  const sessionIds = sessions.map((s) => s.id);
+  // Out-of-order calls that were undone in the console don't count.
+  const undos = await prisma.queueEvent.findMany({
+    where: { organizationId: orgId, action: "UNDO", sessionId: { in: sessionIds } },
+    select: { meta: true },
+  });
+  const undone = [...new Set(undos.map((u) => (u.meta as { undoOf?: string } | null)?.undoOf).filter((x): x is string => !!x))];
   const events = await prisma.queueEvent.findMany({
-    where: { organizationId: orgId, isOutOfOrder: true, sessionId: { in: sessions.map((s) => s.id) } },
+    where: {
+      organizationId: orgId,
+      isOutOfOrder: true,
+      sessionId: { in: sessionIds },
+      ...(undone.length ? { OR: [{ clientRequestId: null }, { clientRequestId: { notIn: undone } }] } : {}),
+    },
     orderBy: { id: "asc" },
     include: {
       token: { select: { serial: true, patientName: true } },

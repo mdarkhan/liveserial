@@ -8,6 +8,7 @@ import "dotenv/config";
 import { randomUUID } from "node:crypto";
 import { prisma } from "../src/lib/db";
 import { dateOnly, dhakaDateString, dhakaWallTimeToUtc, normalizeBdPhone } from "../src/lib/format";
+import { FEATURES } from "../src/lib/features";
 import { addTokens } from "../src/lib/queue-service";
 import { flushOutbox } from "../src/lib/sms";
 import { createUserWithPassword } from "../src/lib/users";
@@ -49,7 +50,13 @@ async function main() {
   }
 
   const org = await prisma.organization.create({
-    data: { name: "সেবা ক্লিনিক ও ডায়াগনস্টিক", slug: ORG_SLUG, address: "মিরপুর ১০, ঢাকা" },
+    data: {
+      name: "সেবা ক্লিনিক ও ডায়াগনস্টিক",
+      slug: ORG_SLUG,
+      address: "মিরপুর ১০, ঢাকা",
+      // Demo: every optional feature on, so they can be tried locally.
+      features: Object.fromEntries(FEATURES.map((f) => [f, true])),
+    },
   });
 
   const [karim, nasrin] = await Promise.all([

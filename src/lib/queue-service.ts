@@ -33,7 +33,11 @@ export type QueueErrorCode =
   | "CONFLICT"
   /** Nobody waiting and nobody inside. */
   | "EMPTY"
-  | "REASON_REQUIRED";
+  | "REASON_REQUIRED"
+  /** Undo asked for too late. */
+  | "UNDO_EXPIRED"
+  /** Something else changed the queue after the action, so it can't be undone safely. */
+  | "UNDO_STALE";
 
 export class QueueError extends Error {
   constructor(
@@ -563,5 +567,93 @@ export async function cancelToken(ctx: QueueCtx, tokenId: string): Promise<{ id:
     if (!CANCELLABLE.includes(token.status)) throw new QueueError("INVALID", `Cannot cancel ${token.status}`);
     await setTokenStatus(tx, ctx, token, "CANCELLED", "TOKEN_CANCELLED");
     return { id: token.id };
+  });
+}
+
+// ───────────── Undo ─────────────
+
+/** Actions the console offers to undo (by their runQueueAction name). */
+export const UNDOABLE_ACTIONS = ["CALL_NEXT", "CALL_TOKEN", "IN_CONSULT", "DONE", "SKIP", "NO_SHOW", "CANCEL_TOKEN"] as const;
+/** The console shows "undo" for 5 s; the server allows a little more for a slow network. */
+export const UNDO_WINDOW_MS = 30_000;
+
+const TOKEN_EVENT_ACTIONS: QueueAction[] = [
+  "CALL_NEXT",
+  "CALL_OUT_OF_ORDER",
+  "MARK_IN_CONSULT",
+  "MARK_DONE",
+  "SKIP",
+  "NO_SHOW",
+  "TOKEN_CANCELLED",
+];
+
+/**
+ * Reverses one earlier action of the same user (identified by its clientRequestId):
+ * every token and session change it made goes back, newest first. Refused if the
+ * window has passed, or if anything else happened in this session afterwards
+ * (then undoing could overwrite someone else's change). The original events stay
+ * in the append-only log; each reversal is logged as an UNDO event, and the
+ * report leaves undone out-of-order calls out.
+ * SMS already queued by the action (e.g. "you're next") are not recalled.
+ */
+export async function undoAction(ctx: QueueCtx, undoOf: string): Promise<{ undone: string; serials: number[] }> {
+  if (!/^[0-9a-f-]{36}$/i.test(undoOf)) throw new QueueError("INVALID", "Bad request id");
+  return runQueueAction(ctx, "UNDO", async (tx, session) => {
+    assertOpen(session);
+    const original = await tx.clientRequest.findUnique({ where: { id: undoOf } });
+    if (
+      !original ||
+      original.organizationId !== ctx.orgId ||
+      original.userId !== ctx.userId ||
+      !(UNDOABLE_ACTIONS as readonly string[]).includes(original.action)
+    ) {
+      throw new QueueError("INVALID", "Not undoable");
+    }
+    if (Date.now() - original.createdAt.getTime() > UNDO_WINDOW_MS) throw new QueueError("UNDO_EXPIRED");
+
+    const events = await tx.queueEvent.findMany({
+      where: { sessionId: session.id, clientRequestId: undoOf },
+      orderBy: { id: "desc" },
+    });
+    if (events.length === 0) throw new QueueError("INVALID", "Not in this session");
+    const latest = await tx.queueEvent.findFirst({
+      where: { sessionId: session.id },
+      orderBy: { id: "desc" },
+      select: { clientRequestId: true },
+    });
+    if (latest?.clientRequestId !== undoOf) throw new QueueError("UNDO_STALE");
+
+    const tokens = await sessionTokens(tx, session.id);
+    const serials: number[] = [];
+    for (const e of events) {
+      const meta = { undoOf, undoneAction: e.action };
+      if (e.tokenId && TOKEN_EVENT_ACTIONS.includes(e.action)) {
+        const token = findToken(tokens, e.tokenId);
+        if (token.status !== e.toStatus || !e.fromStatus) throw new QueueError("UNDO_STALE");
+        const from = e.fromStatus as TokenStatus;
+        const reset =
+          e.action === "CALL_NEXT" || e.action === "CALL_OUT_OF_ORDER"
+            ? { calledAt: null }
+            : e.action === "MARK_IN_CONSULT"
+              ? { consultStartedAt: null }
+              : e.action === "MARK_DONE"
+                ? { completedAt: null }
+                : {};
+        await setTokenStatus(tx, ctx, token, from, "UNDO", reset, { meta: { ...meta, serial: token.serial } });
+        serials.push(token.serial);
+      } else if (e.action === "SESSION_STATUS_CHANGED" && e.fromStatus) {
+        // Only the automatic "now RUNNING" that a call makes.
+        const m = (e.meta ?? {}) as { auto?: boolean; arrivedNow?: boolean };
+        if (!m.auto) throw new QueueError("UNDO_STALE");
+        await tx.session.update({
+          where: { id: session.id },
+          data: { status: e.fromStatus as SessionStatus, ...(m.arrivedNow ? { doctorArrivedAt: null } : {}) },
+        });
+        await logEvent(tx, ctx, { action: "UNDO", fromStatus: e.toStatus, toStatus: e.fromStatus, meta });
+      } else {
+        throw new QueueError("INVALID", `Cannot undo ${e.action}`);
+      }
+    }
+    return { undone: original.action, serials };
   });
 }

@@ -65,6 +65,8 @@ enum QueueAction {
   SESSION_STATUS_CHANGED
   DELAY_SET
   DELAY_BROADCAST
+  /// Reverses one earlier action (by its clientRequestId) within a short window.
+  UNDO
 }
 
 enum OutOfOrderReason {
@@ -99,6 +101,9 @@ model Organization {
   phone     String?
   address   String?
   isActive  Boolean  @default(true)
+  /// Optional features switched on by the super admin: { "CONSOLE_UNDO": true, … }.
+  /// Missing key = off. See src/lib/features.ts.
+  features  Json     @default("{}")
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
@@ -205,6 +210,9 @@ model Doctor {
   name           String
   specialty      String?
   isActive       Boolean  @default(true)
+  /// Per-doctor overrides of the organization's features: key → true/false.
+  /// Missing key = same as the organization.
+  features       Json     @default("{}")
   createdAt      DateTime @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime @updatedAt @db.Timestamptz(3)
 
@@ -328,6 +336,8 @@ model Token {
   @@unique([sessionId, serial])
   @@index([sessionId, status, queueOrder])
   @@index([organizationId])
+  /// Returning-patient lookup in the console.
+  @@index([organizationId, patientPhone, createdAt])
 }
 
 /// Append-only audit log of every queue and session change.

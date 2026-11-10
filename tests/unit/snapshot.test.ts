@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { consultMinutes, projectConsole, projectDisplay, projectPatient, type SessionData } from "@/lib/snapshot";
 import type { SessionStatus, TokenStatus } from "@/generated/prisma/enums";
+import { resolveFeatures, type FeatureOverrides } from "@/lib/features";
 
-function session(statuses: TokenStatus[], over: Partial<{ status: SessionStatus; threshold: number }> = {}): SessionData {
+function session(
+  statuses: TokenStatus[],
+  over: Partial<{ status: SessionStatus; threshold: number; features: FeatureOverrides }> = {},
+): SessionData {
   return {
     id: "s1",
     organizationId: "o1",
@@ -19,7 +23,9 @@ function session(statuses: TokenStatus[], over: Partial<{ status: SessionStatus;
     queueVersion: 7,
     createdAt: new Date(),
     updatedAt: new Date(),
-    doctor: { name: "ডা. করিম" },
+    organization: { features: over.features ?? {} },
+    doctor: { name: "ডা. করিম", features: {} },
+    features: resolveFeatures(over.features ?? {}),
     chamber: { name: "চেম্বার ১", leaveNowThreshold: over.threshold ?? 3 },
     stats: { medianConsultMinutes: null, medianArrivalDelayMinutes: null },
     tokens: statuses.map((status, i) => ({
@@ -111,5 +117,28 @@ describe("consultMinutes", () => {
   it("ignores mis-taps under a minute and missing times", () => {
     expect(consultMinutes({ calledAt: at(0), consultStartedAt: null, completedAt: at(20) })).toBeNull();
     expect(consultMinutes({ calledAt: null, consultStartedAt: null, completedAt: at(20) })).toBeNull();
+  });
+});
+
+describe("optional features in the views", () => {
+  it("are all off unless switched on", () => {
+    const d = session(queue);
+    expect(projectPatient(d, "code5xxxxx")!.features).toEqual({
+      PATIENT_PROGRESS: false,
+      PATIENT_ALERT: false,
+      PATIENT_UPDATED_AGO: false,
+    });
+    expect(projectConsole(d).features).toEqual({ CONSOLE_UNDO: false, CONSOLE_LOOKUP: false });
+  });
+
+  it("each view carries only its own flags", () => {
+    const d = session(queue, { features: { PATIENT_ALERT: true, DISPLAY_ANNOUNCE: true, CONSOLE_LOOKUP: true } });
+    expect(projectPatient(d, "code5xxxxx")!.features.PATIENT_ALERT).toBe(true);
+    expect(projectDisplay(d).features).toEqual({ DISPLAY_CHIME: false, DISPLAY_ANNOUNCE: true, DISPLAY_CONTROLS: false });
+    expect(Object.keys(projectPatient(d, "code5xxxxx")!.features)).not.toContain("CONSOLE_LOOKUP");
+  });
+
+  it("gives the patient a count of patients already seen (for the progress bar)", () => {
+    expect(projectPatient(session(queue), "code5xxxxx")!.doneCount).toBe(1);
   });
 });

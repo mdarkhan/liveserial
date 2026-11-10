@@ -40,6 +40,8 @@ ENV NODE_ENV=production \
 COPY --from=migrator /migrate /migrate
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+# App icons and (optional) recorded announcement audio in public/audio/bn/
+COPY --from=builder /app/public ./public
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh && chown -R node:node /app
 USER node

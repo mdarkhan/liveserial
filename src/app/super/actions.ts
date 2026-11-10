@@ -8,6 +8,7 @@ import { normalizeBdPhone } from "@/lib/format";
 import { t } from "@/lib/i18n/bn";
 import { fail, isUniqueViolation, parseForm, type ActionResult } from "@/lib/action-result";
 import { createUserWithPassword } from "@/lib/users";
+import { doctorOverridesFromForm, FEATURES, orgFeaturesFromForm } from "@/lib/features";
 
 const v = t.validation;
 
@@ -70,4 +71,36 @@ export async function toggleOrganization(fd: FormData) {
     ...(org.isActive ? [prisma.authSession.deleteMany({ where: { user: { organizationId: org.id } } })] : []),
   ]);
   revalidatePath("/super");
+}
+
+// ───────────── Optional features ─────────────
+
+/** Organization-wide feature switches (checkbox per feature, or the "all on/off" buttons). */
+export async function saveOrgFeatures(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  await requireUser(["SUPER_ADMIN"]);
+  const orgId = String(fd.get("orgId") ?? "");
+  const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { id: true } });
+  if (!org) return fail(t.common.notFound);
+  const preset = fd.get("preset");
+  const flags =
+    preset === "all-on" || preset === "all-off"
+      ? Object.fromEntries(FEATURES.map((f) => [f, preset === "all-on"]))
+      : orgFeaturesFromForm(fd);
+  await prisma.organization.update({ where: { id: org.id }, data: { features: flags } });
+  revalidatePath(`/super/orgs/${org.id}`);
+  revalidatePath("/super");
+  return { ok: true, message: t.features.saved };
+}
+
+/** One doctor's overrides ("same as organization" / on / off per feature). */
+export async function saveDoctorFeatures(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  await requireUser(["SUPER_ADMIN"]);
+  const orgId = String(fd.get("orgId") ?? "");
+  const doctorId = String(fd.get("doctorId") ?? "");
+  // Scoped by organization: a doctor id from another organization is "not found".
+  const doctor = await prisma.doctor.findFirst({ where: { id: doctorId, organizationId: orgId }, select: { id: true } });
+  if (!doctor) return fail(t.common.notFound);
+  await prisma.doctor.update({ where: { id: doctor.id }, data: { features: doctorOverridesFromForm(fd) } });
+  revalidatePath(`/super/orgs/${orgId}`);
+  return { ok: true, message: t.features.saved };
 }

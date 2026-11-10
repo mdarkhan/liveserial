@@ -10,12 +10,28 @@ Live queue and wait-time estimate for doctor chambers in Bangladesh. Patients op
 
 | Role | Home | Can do |
 |---|---|---|
-| Super admin | `/super` | Organizations, plus SMS usage per organization for billing (`/super/sms`) |
+| Super admin | `/super` | Organizations, optional features per organization and doctor (`/super/orgs/<id>`), SMS usage per organization for billing (`/super/sms`) |
 | Clinic admin | `/admin` | Sessions, daily reports (`/admin/reports`), doctors, chambers, schedules, users, and the console |
 | Assistant | `/console` | Runs the queue for any sitting in their organization |
 | Doctor | `/console` | Sees their own queue (read-only) and their own daily report (`/console/reports`) |
 | Patient | `/t/<code>` | Live position and wait estimate (the link comes by SMS, no login) |
 | Waiting-room TV | `/display/<sessionId>` | Now serving and the next patients (no login) |
+
+## Optional features
+
+Nine extras are switched on by the super admin per organization (`/super/orgs/<id>`), with per-doctor overrides. All of them are off until switched on:
+
+- **Patient page:** progress bar and "get ready", sound and vibration alert, "updated … seconds ago".
+- **Waiting-room TV:** chime and pop animation, Bangla announcement, big-number and fullscreen buttons.
+- **Console:** 5-second undo, returning-patient name from the phone number, install on home screen.
+
+**Announcement audio (optional):** put recordings in `public/audio/bn/`:
+
+- `serial.mp3` ("সিরিয়াল");
+- `1.mp3`, `2.mp3`, … (the numbers);
+- `enter.mp3` ("ভেতরে আসুন").
+
+Without them, TVs use the device's Bangla voice if it has one, otherwise only the chime. A TV needs one tap on "শব্দ চালু করুন" after loading, because browsers require it before playing sound.
 
 ## Environment variables
 

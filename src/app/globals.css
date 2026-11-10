@@ -73,3 +73,49 @@
     }
   }
 }
+
+/* Waiting-room TV: a newly called serial pops in and the panel flashes once. */
+@keyframes serial-pop {
+  0% {
+    transform: scale(0.55);
+    opacity: 0.15;
+  }
+  55% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+  75% {
+    transform: scale(0.97);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes panel-flash {
+  0%,
+  40% {
+    box-shadow: 0 0 0 1.6vmin var(--color-warning);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+.serial-pop {
+  animation: serial-pop 900ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+.panel-flash {
+  animation: panel-flash 2.4s ease-out both;
+}
+
+/* Console: the "undo" toast's shrinking time bar. */
+@keyframes undo-timer {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+.undo-timer {
+  animation: undo-timer linear both;
+}

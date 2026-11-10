@@ -37,6 +37,7 @@ type ActionBody =
   | { type: "DOCTOR"; action: DoctorStatusAction }
   | { type: "DELAY"; minutes: number }
   | { type: "BROADCAST"; minutes: number }
+  | { type: "UNDO"; undoOf: string }
   | {
       type: "ADD";
       patients: Array<{ name: string; phone?: string | null; serial?: number; isEmergency?: boolean }>;
@@ -56,7 +57,25 @@ type Notice = { tone: "success" | "danger" | "warning"; text: string } | null;
 const MAX_ATTEMPTS = 6;
 const backoffMs = (attempt: number) => Math.min(1000 * 2 ** (attempt - 1), 15_000);
 const REQUEST_TIMEOUT_MS = 15_000;
-const CALL_TYPES = new Set(["NEXT", "CALL", "IN_CONSULT", "DONE", "NO_SHOW"]);
+const CALL_TYPES = new Set(["NEXT", "CALL", "IN_CONSULT", "DONE", "NO_SHOW", "UNDO"]);
+/** Actions the "undo" toast is offered for (see UNDOABLE_ACTIONS on the server). */
+const UNDOABLE_TYPES = new Set(["NEXT", "CALL", "IN_CONSULT", "DONE", "SKIP", "NO_SHOW", "CANCEL"]);
+/** How long the "undo" toast stays. */
+const UNDO_SHOW_MS = 5_000;
+
+type UndoOffer = { rid: string; label: string; detail: string | null };
+
+async function lookupName(sessionId: string, phone: string): Promise<string | null> {
+  try {
+    const res = await fetch(`/api/sessions/${sessionId}/lookup?phone=${encodeURIComponent(phone)}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return ((await res.json()) as { name: string | null }).name;
+  } catch {
+    return null;
+  }
+}
 
 function errorText(code: string | undefined): string {
   return (c.errors as Record<string, string>)[code ?? ""] ?? c.errors.GENERIC;
@@ -87,6 +106,8 @@ export function ConsoleClient({
   );
   const [pending, setPending] = useState<Pending[]>([]);
   const [notice, setNotice] = useState<Notice>(null);
+  const [undo, setUndo] = useState<UndoOffer | null>(null);
+  const undoAllowed = view.features.CONSOLE_UNDO && !readOnly;
   const queueRef = useRef<Pending[]>([]);
   const busyRef = useRef(false);
 
@@ -112,8 +133,18 @@ export function ConsoleClient({
         }
         applyView(json?.view);
         if (json?.ok) {
+          if (item.body.type === "UNDO") {
+            setNotice({ tone: "success", text: c.undoDone(item.label) });
+          } else if (undoAllowed && UNDOABLE_TYPES.has(item.body.type)) {
+            const r = json.result as { calledSerial?: number | null; serial?: number } | null;
+            const serial = r?.calledSerial ?? r?.serial ?? null;
+            setUndo({ rid: item.rid, label: item.label, detail: serial ? `${t.token.serial} ${bn(serial)}` : null });
+          }
           if (item.body.type === "BROADCAST") {
-            setNotice({ tone: "success", text: c.broadcastDone(bn((json.result as { recipients: number }).recipients)) });
+            setNotice({
+              tone: "success",
+              text: c.broadcastDone(bn((json.result as { recipients: number }).recipients)),
+            });
           }
           if (item.body.type === "ADD") {
             const n = item.body.patients.length;
@@ -133,8 +164,15 @@ export function ConsoleClient({
         clearTimeout(timer);
       }
     },
-    [sessionId, applyView],
+    [sessionId, applyView, undoAllowed],
   );
+
+  // The undo offer disappears after a few seconds.
+  useEffect(() => {
+    if (!undo) return;
+    const id = setTimeout(() => setUndo(null), UNDO_SHOW_MS);
+    return () => clearTimeout(id);
+  }, [undo]);
 
   const pump = useCallback(async () => {
     if (busyRef.current) return;
@@ -165,6 +203,7 @@ export function ConsoleClient({
     (body: ActionBody, label: string) => {
       if (readOnly) return;
       setNotice(null);
+      setUndo(null); // anything new makes the previous action final
       queueRef.current.push({ rid: newRequestId(), body, label, attempts: 0, state: "sending" });
       flush();
       void pump();
@@ -234,6 +273,10 @@ export function ConsoleClient({
   };
 
   const doctorButtons = canAct ? availableDoctorActions(s.status) : [];
+  const lookup = useCallback(
+    (phone: string) => (view.features.CONSOLE_LOOKUP ? lookupName(sessionId, phone) : Promise.resolve(null)),
+    [view.features.CONSOLE_LOOKUP, sessionId],
+  );
 
   return (
     <div className="mx-auto w-full max-w-xl pb-40">
@@ -255,7 +298,13 @@ export function ConsoleClient({
           </div>
           <Badge tone={sessionTone(s.status)}>{t.sessionStatus[s.status]}</Badge>
         </div>
-        <SyncStatus pending={pending} mode={mode} updatedAt={updatedAt} onRetry={retryFailed} onDiscard={discardFailed} />
+        <SyncStatus
+          pending={pending}
+          mode={mode}
+          updatedAt={updatedAt}
+          onRetry={retryFailed}
+          onDiscard={discardFailed}
+        />
       </header>
 
       <main className="space-y-4 px-4 pt-4">
@@ -280,17 +329,26 @@ export function ConsoleClient({
         {(doctorButtons.length > 0 || s.announcedDelayMinutes) && (
           <section aria-label={t.common.status} className="flex flex-wrap gap-2">
             {doctorButtons.includes("ARRIVED") && (
-              <button className={buttonClass("primary")} onClick={() => act({ type: "DOCTOR", action: "ARRIVED" }, c.doctorArrived)}>
+              <button
+                className={buttonClass("primary")}
+                onClick={() => act({ type: "DOCTOR", action: "ARRIVED" }, c.doctorArrived)}
+              >
                 {c.doctorArrived}
               </button>
             )}
             {doctorButtons.includes("RESUME") && (
-              <button className={buttonClass("primary")} onClick={() => act({ type: "DOCTOR", action: "RESUME" }, c.doctorResume)}>
+              <button
+                className={buttonClass("primary")}
+                onClick={() => act({ type: "DOCTOR", action: "RESUME" }, c.doctorResume)}
+              >
                 {c.doctorResume}
               </button>
             )}
             {doctorButtons.includes("BREAK") && (
-              <button className={buttonClass("secondary")} onClick={() => act({ type: "DOCTOR", action: "BREAK" }, c.doctorBreak)}>
+              <button
+                className={buttonClass("secondary")}
+                onClick={() => act({ type: "DOCTOR", action: "BREAK" }, c.doctorBreak)}
+              >
                 {c.doctorBreak}
               </button>
             )}
@@ -401,13 +459,46 @@ export function ConsoleClient({
           </section>
         )}
 
-        {canAct && <AddPatients onAdd={(patients, label) => act({ type: "ADD", patients }, label)} />}
+        {canAct && (
+          <AddPatients
+            onAdd={(patients, label) => act({ type: "ADD", patients }, label)}
+            lookup={view.features.CONSOLE_LOOKUP ? lookup : undefined}
+          />
+        )}
       </main>
 
       {/* ───── the big button (thumb zone) ───── */}
       {canAct && (
         <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
           <div className="mx-auto max-w-xl">
+            {undo && (
+              <div
+                key={undo.rid}
+                role="status"
+                className="relative mb-2 flex items-center gap-3 overflow-hidden rounded-xl bg-ink px-4 py-2 text-white shadow-lg"
+              >
+                <p className="min-w-0 flex-1 font-medium">
+                  {c.undoAfter(undo.label)}
+                  {undo.detail && <span className="text-white/80"> · {undo.detail}</span>}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const offer = undo;
+                    navigator.vibrate?.(20);
+                    act({ type: "UNDO", undoOf: offer.rid }, offer.label);
+                  }}
+                  className="min-h-12 shrink-0 rounded-lg bg-white px-4 font-bold text-ink hover:bg-white/90"
+                >
+                  {c.undo}
+                </button>
+                <span
+                  aria-hidden="true"
+                  className="undo-timer absolute inset-x-0 bottom-0 h-1 origin-left bg-warning"
+                  style={{ animationDuration: `${UNDO_SHOW_MS}ms` }}
+                />
+              </div>
+            )}
             <button
               type="button"
               onClick={tapNext}
@@ -424,20 +515,31 @@ export function ConsoleClient({
       )}
 
       {/* ───── dialogs ───── */}
-      <Sheet open={!!sheetToken} onClose={() => setSheetToken(null)} title={sheetToken ? `${t.token.serial} ${bn(sheetToken.serial)}` : ""}>
+      <Sheet
+        open={!!sheetToken}
+        onClose={() => setSheetToken(null)}
+        title={sheetToken ? `${t.token.serial} ${bn(sheetToken.serial)}` : ""}
+      >
         {sheetToken && (
           <div className="space-y-3">
             <p className="text-xl font-semibold">
               {sheetToken.name} {sheetToken.isEmergency && <Badge tone="danger">{t.token.emergency}</Badge>}
             </p>
             {sheetToken.phone && (
-              <a href={`tel:+${sheetToken.phone}`} className="inline-flex min-h-12 items-center font-medium text-primary underline">
+              <a
+                href={`tel:+${sheetToken.phone}`}
+                className="inline-flex min-h-12 items-center font-medium text-primary underline"
+              >
                 {c.phone}: {bn(displayPhone(sheetToken.phone))}
               </a>
             )}
             {sheetToken.status === "WAITING" ? (
               <div className="grid gap-2">
-                <button className={buttonClass("primary", "lg")} disabled={callBusy} onClick={() => callNow(sheetToken)}>
+                <button
+                  className={buttonClass("primary", "lg")}
+                  disabled={callBusy}
+                  onClick={() => callNow(sheetToken)}
+                >
                   {c.callNow}
                 </button>
                 <button
@@ -772,7 +874,10 @@ function OutOfOrderForm({
   const [reason, setReason] = useState<OutOfOrderReasonCode | null>(state.token.isEmergency ? "EMERGENCY" : null);
   const [note, setNote] = useState("");
   const [error, setError] = useState(false);
-  const shown = state.jumped.slice(0, 8).map((n) => bn(n)).join(", ");
+  const shown = state.jumped
+    .slice(0, 8)
+    .map((n) => bn(n))
+    .join(", ");
   const more = state.jumped.length > 8 ? " …" : "";
 
   return (
@@ -846,11 +951,14 @@ function OutOfOrderForm({
 
 function AddPatients({
   onAdd,
+  lookup,
 }: {
   onAdd: (
     patients: Array<{ name: string; phone?: string | null; serial?: number; isEmergency?: boolean }>,
     label: string,
   ) => void;
+  /** Returning patient: name on the latest serial with this phone (only when switched on). */
+  lookup?: (phone: string) => Promise<string | null>;
 }) {
   const [mode, setMode] = useState<"quick" | "bulk">("quick");
   const [name, setName] = useState("");
@@ -860,6 +968,26 @@ function AddPatients({
   const [bulk, setBulk] = useState("");
   const nameRef = useRef<HTMLInputElement>(null);
   const parsed = bulk.trim() ? parseBulkList(bulk) : null;
+
+  // Returning patient: once the phone number is complete, look up the last name used with it.
+  const [found, setFound] = useState<{ phone: string; name: string; filled: boolean } | null>(null);
+  const phoneNorm = normalizeBdPhone(phone);
+  useEffect(() => {
+    if (!lookup || !phoneNorm) return;
+    let cancelled = false;
+    const id = setTimeout(async () => {
+      const n = await lookup(phoneNorm);
+      if (cancelled || !n) return;
+      const empty = !nameRef.current?.value.trim();
+      if (empty) setName(n);
+      setFound({ phone: phoneNorm, name: n, filled: empty });
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(id);
+    };
+  }, [lookup, phoneNorm]);
+  const match = found && found.phone === phoneNorm ? found : null;
 
   return (
     <section aria-labelledby="add-h" className="rounded-[var(--radius-card)] border border-line bg-surface p-4">
@@ -895,41 +1023,139 @@ function AddPatients({
             setPhone("");
             setEmergency(false);
             setPhoneError(false);
+            setFound(null);
             nameRef.current?.focus();
           }}
         >
-          <label className="block">
-            <span className="mb-1 block font-medium">
-              {t.token.patientName} <span className="text-danger" aria-hidden="true">*</span>
-            </span>
-            <input
-              ref={nameRef}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              autoComplete="off"
-              className="block min-h-12 w-full rounded-lg border-2 border-line-strong px-3"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block font-medium">{t.token.patientPhone}</span>
-            <input
-              value={phone}
-              onChange={(e) => {
-                setPhone(e.target.value);
-                setPhoneError(false);
-              }}
-              type="tel"
-              inputMode="tel"
-              autoComplete="off"
-              aria-invalid={phoneError || undefined}
-              aria-describedby="qa-phone-hint"
-              className="block min-h-12 w-full rounded-lg border-2 border-line-strong px-3 aria-[invalid=true]:border-danger"
-            />
-            <span id="qa-phone-hint" className={cx("mt-1 block text-sm", phoneError ? "font-medium text-danger" : "text-ink-muted")}>
-              {phoneError ? t.validation.phone : t.token.phoneOptional}
-            </span>
-          </label>
+          {lookup ? (
+            <>
+              <label className="block">
+                <span className="mb-1 block font-medium">{t.token.patientPhone}</span>
+                <input
+                  value={phone}
+                  onChange={(e) => {
+                    setPhone(e.target.value);
+                    setPhoneError(false);
+                  }}
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="off"
+                  aria-invalid={phoneError || undefined}
+                  aria-describedby="qa-phone-hint"
+                  className="block min-h-12 w-full rounded-lg border-2 border-line-strong px-3 aria-[invalid=true]:border-danger"
+                />
+                <span
+                  id="qa-phone-hint"
+                  className={cx("mt-1 block text-sm", phoneError ? "font-medium text-danger" : "text-ink-muted")}
+                >
+                  {phoneError ? t.validation.phone : t.token.phoneOptional}
+                </span>
+                {match && (
+                  <span
+                    role="status"
+                    className="mt-1 flex flex-wrap items-center gap-2 text-sm font-medium text-success"
+                  >
+                    {match.filled && match.name === name ? (
+                      c.lookupFilled
+                    ) : (
+                      <>
+                        {c.lookupSuggest(match.name)}
+                        {match.name !== name && (
+                          <button
+                            type="button"
+                            onClick={() => setName(match.name)}
+                            className="min-h-12 rounded-lg px-2 text-primary underline"
+                          >
+                            {c.lookupUse}
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </span>
+                )}
+              </label>
+              <label className="block">
+                <span className="mb-1 block font-medium">
+                  {t.token.patientName}{" "}
+                  <span className="text-danger" aria-hidden="true">
+                    *
+                  </span>
+                </span>
+                <input
+                  ref={nameRef}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  autoComplete="off"
+                  className="block min-h-12 w-full rounded-lg border-2 border-line-strong px-3"
+                />
+              </label>
+            </>
+          ) : (
+            <>
+              <label className="block">
+                <span className="mb-1 block font-medium">
+                  {t.token.patientName}{" "}
+                  <span className="text-danger" aria-hidden="true">
+                    *
+                  </span>
+                </span>
+                <input
+                  ref={nameRef}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  autoComplete="off"
+                  className="block min-h-12 w-full rounded-lg border-2 border-line-strong px-3"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block font-medium">{t.token.patientPhone}</span>
+                <input
+                  value={phone}
+                  onChange={(e) => {
+                    setPhone(e.target.value);
+                    setPhoneError(false);
+                  }}
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="off"
+                  aria-invalid={phoneError || undefined}
+                  aria-describedby="qa-phone-hint"
+                  className="block min-h-12 w-full rounded-lg border-2 border-line-strong px-3 aria-[invalid=true]:border-danger"
+                />
+                <span
+                  id="qa-phone-hint"
+                  className={cx("mt-1 block text-sm", phoneError ? "font-medium text-danger" : "text-ink-muted")}
+                >
+                  {phoneError ? t.validation.phone : t.token.phoneOptional}
+                </span>
+                {match && (
+                  <span
+                    role="status"
+                    className="mt-1 flex flex-wrap items-center gap-2 text-sm font-medium text-success"
+                  >
+                    {match.filled && match.name === name ? (
+                      c.lookupFilled
+                    ) : (
+                      <>
+                        {c.lookupSuggest(match.name)}
+                        {match.name !== name && (
+                          <button
+                            type="button"
+                            onClick={() => setName(match.name)}
+                            className="min-h-12 rounded-lg px-2 text-primary underline"
+                          >
+                            {c.lookupUse}
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </span>
+                )}
+              </label>
+            </>
+          )}
           <label className="flex min-h-12 items-center gap-3 font-medium">
             <input
               type="checkbox"
@@ -1055,7 +1281,9 @@ function BroadcastForm({
         </div>
       </fieldset>
       {recipients.length === 0 ? (
-        <p className="rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-warning-ink">{c.broadcastNone}</p>
+        <p className="rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-warning-ink">
+          {c.broadcastNone}
+        </p>
       ) : (
         <>
           <div>

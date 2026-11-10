@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
 import { ActionForm, Field, PasswordField, SubmitButton } from "@/components/form";
 import { Badge, Card, CardTitle, EmptyState, List, ListItem, PageHeader } from "@/components/ui";
 import { requireUser } from "@/lib/access";
 import { prisma } from "@/lib/db";
+import { FEATURES, resolveFeatures } from "@/lib/features";
 import { bn, formatDateShort } from "@/lib/format";
 import { t } from "@/lib/i18n/bn";
 import { createOrganization, toggleOrganization } from "./actions";
@@ -29,14 +31,26 @@ export default async function SuperPage() {
             <List>
               {orgs.map((o) => (
                 <ListItem key={o.id}>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold">{o.name}</p>
+                  {/* Full width on phones, so the buttons wrap to their own row. */}
+                  <div className="min-w-0 basis-full sm:basis-0 sm:flex-1">
+                    <Link href={`/super/orgs/${o.id}`} className="font-semibold text-primary underline-offset-2 hover:underline">
+                      {o.name}
+                    </Link>
                     <p className="text-sm text-ink-muted">
                       <span className="font-mono">{o.slug}</span> · {t.org.users}: {bn(o._count.users)} · {t.org.doctors}:{" "}
                       {bn(o._count.doctors)} · {formatDateShort(o.createdAt)}
                     </p>
+                    <p className="text-sm text-ink-muted">
+                      {t.org.featuresOn(
+                        bn(Object.values(resolveFeatures(o.features)).filter(Boolean).length),
+                        bn(FEATURES.length),
+                      )}
+                    </p>
                   </div>
                   <Badge tone={o.isActive ? "success" : "neutral"}>{o.isActive ? t.common.active : t.common.inactive}</Badge>
+                  <Link href={`/super/orgs/${o.id}`} className="inline-flex min-h-12 items-center px-2 font-medium text-primary underline">
+                    {t.org.features}
+                  </Link>
                   <form action={toggleOrganization}>
                     <input type="hidden" name="id" value={o.id} />
                     <button type="submit" className="min-h-12 px-2 font-medium text-primary underline">
