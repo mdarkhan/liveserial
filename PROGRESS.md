@@ -11,7 +11,7 @@ Read [docs/BRIEF.md](docs/BRIEF.md) (requirements) and [docs/PLAN.md](docs/PLAN.
 | 2 — Queue engine | **Approved** (2026-11-10) | See "Phase 2" below. |
 | 3 — Live view | **Approved** (2026-11-10) | See "Phase 3" below. |
 | 4 — ETA and SMS | **Approved** (2026-11-10) | See "Phase 4" below. |
-| 5 — Admin and deploy | **Done, awaiting owner review** (2026-11-10) | See "Phase 5" below. Docker image not built here (no Docker on this machine). |
+| 5 — Admin and deploy | **Done, awaiting owner review** (2026-11-10) | See "Phase 5" below. Deployed to FlyNode 2026-11-10 (see "Deployment"). |
 
 ## How to run (local)
 
@@ -198,6 +198,21 @@ Arrived → next → next → "ভিতরে গেছেন" → emergency ca
 7. **First super admin on production** is created by the server at start from env vars, so the production image needs neither the seed (which adds demo data) nor `tsx`. If a super admin already exists, the variables do nothing.
 8. **Migrations run on every container start** (`prisma migrate deploy`, which only applies new migrations). The Prisma CLI is installed in its own folder in the image, because the standalone output doesn't include it.
 
+## Deployment (2026-11-10)
+
+- **Code:** GitHub `https://github.com/mdarkhan/liveserial` (public, branch `main`), remote `origin`.
+- **App:** FlyNode app `liveserial`, built from the Dockerfile, port 3000, with a FlyNode PostgreSQL database (`DATABASE_URL` set by FlyNode).
+  - Address: https://nt2dfm9rvn96knb7lgaurxm6.flynode.io (FlyNode default; Q8 custom domain still open).
+- **Settings:** set by the owner through FlyNode's secure link: `BETTER_AUTH_SECRET`, `APP_BASE_URL`, `SEED_SUPERADMIN_PHONE`, `SEED_SUPERADMIN_PASSWORD`. Also `SMS_PROVIDER=console`.
+- **Q2 answered:** FlyNode's database is a direct connection (no pooler), so `DIRECT_DATABASE_URL` isn't needed.
+- **Verified live:**
+  - The real Docker image built on FlyNode and both migrations applied on first start.
+  - "Created super admin" was logged on start.
+  - `/login` 200, `/admin` redirects to login, unknown patient link 404 page, static CSS 200.
+  - Not verified by me: signing in as the super admin. The owner holds the password.
+- **SMS:** only printed to the FlyNode runtime log until a Bangladeshi gateway is added.
+- **Custom domain:** when added, change `APP_BASE_URL` to match.
+
 ## Known issues / notes
 
 - Dev machine (Windows 10) has no Docker / psql; `npm run db:start` (embedded-postgres) is the local DB. Keep it running in its own terminal.
@@ -205,16 +220,16 @@ Arrived → next → next → "ভিতরে গেছেন" → emergency ca
 - The admin session page shows the last 30 audit events; the daily report (`/admin/reports`) lists every out-of-order call.
 - Dev only: if the dev server hot-reloads while a form is submitted, the server action can be missed (seen once on login, during a hot reload). Believed to be dev-only; not yet checked against a production build.
 - `npm run db:reset` is destructive (drops the dev DB); Prisma will ask for confirmation.
-- No git remote configured. Don't push without asking.
+- Git remote `origin` = github.com/mdarkhan/liveserial. Ask before pushing.
 - `next start` warns that it "does not work with output: standalone"; it works for the e2e run. The Docker image runs `node server.js` from the standalone output, as Next recommends.
 - `next build` fails with EBUSY if the dev server (or a standalone server) is running from `.next`; stop it before `npm run test:e2e`.
 - SSE connections are not rate-limited per IP yet (public links are unguessable: ~57.8-bit codes / UUIDs). Revisit before launch if needed.
 - A `pg` deprecation warning ("client.query() when the client is already executing a query") appears in tests; it comes from inside `@prisma/adapter-pg`'s transaction handling, not our code. Harmless now; recheck when upgrading Prisma / pg 9.
 - SMS links use `APP_BASE_URL`; set it to the real HTTPS domain in production (Q8 — a short domain saves SMS segments).
-- **Docker image not built locally** (no Docker here); the container steps were simulated (see Phase 5 → Verified). The first FlyNode build is the real check.
+- Docker isn't installed on the dev machine; the image is built by FlyNode (first build succeeded 2026-11-10).
 - **`.env.example` may need two lines added by the owner** (agent edits to env files are blocked):
   - `DIRECT_DATABASE_URL=` with a comment "only if DATABASE_URL goes through a pooler";
   - `SEED_SUPERADMIN_PHONE` / `SEED_SUPERADMIN_PASSWORD`, if they're missing.
 
   README lists every variable.
-- Open questions: Q2 (does FlyNode's database go through a pooler?) and Q8 (production domain).
+- Open question: Q8 (production domain). Q2 answered: direct connection.
