@@ -9,6 +9,7 @@ import { t } from "@/lib/i18n/bn";
 import { sessionTone } from "@/lib/status";
 import type { SessionStatus } from "@/generated/prisma/enums";
 import { openSitting } from "./actions";
+import { doctorNav } from "./doctor-nav";
 
 export const metadata: Metadata = { title: t.console.title };
 
@@ -82,7 +83,7 @@ export default async function ConsoleHome({ searchParams }: PageProps<"/console"
   rows.sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
 
   return (
-    <AppShell user={user}>
+    <AppShell user={user} nav={user.role === "DOCTOR" ? doctorNav : undefined}>
       <PageHeader title={date === today ? t.console.title : t.console.titleFor} subtitle={formatDate(dateOnly(date))} />
 
       <nav aria-label={t.common.date} className="mb-4 flex flex-wrap gap-2">

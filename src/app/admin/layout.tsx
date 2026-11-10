@@ -4,6 +4,7 @@ import { t } from "@/lib/i18n/bn";
 
 const nav = [
   { href: "/admin/sessions", label: t.nav.sessions },
+  { href: "/admin/reports", label: t.nav.reports },
   { href: "/admin/doctors", label: t.nav.doctors },
   { href: "/admin/chambers", label: t.nav.chambers },
   { href: "/admin/schedules", label: t.nav.schedules },

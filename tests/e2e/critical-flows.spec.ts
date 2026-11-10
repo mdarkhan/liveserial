@@ -95,6 +95,16 @@ test.describe.serial("critical flows", () => {
     await expect(row).toContainText("কারণ: রিপোর্ট দেখানো");
     await expect(row).toContainText("যাদের আগে ডাকা হলো: ৩, ৪, ৫");
     await expect(row).toContainText("E2E সহকারী");
+
+    // …and in today's daily report.
+    await page.getByRole("link", { name: "রিপোর্ট" }).click();
+    await expect(page).toHaveURL(/\/admin\/reports$/);
+    const ooo = page.locator('section[aria-labelledby="ooo-h"] li');
+    await expect(ooo).toHaveCount(1);
+    await expect(ooo).toContainText("সিরিয়াল ৬");
+    await expect(ooo).toContainText("কারণ: রিপোর্ট দেখানো");
+    await expect(ooo).toContainText("যাদের আগে ডাকা হলো: ৩, ৪, ৫");
+    await expect(ooo).toContainText("ডেকেছেন: E2E সহকারী");
   });
 
   test("delay broadcast shows recipients and segments before sending", async ({ page }) => {

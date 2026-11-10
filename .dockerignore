@@ -1,0 +1,15 @@
+.git
+.next
+node_modules
+src/generated
+.pgdata
+.playwright-mcp
+.claude
+test-results
+playwright-report
+coverage
+*.log
+*.tsbuildinfo
+.env
+.env.*
+!.env.example

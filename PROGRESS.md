@@ -10,8 +10,8 @@ Read [docs/BRIEF.md](docs/BRIEF.md) (requirements) and [docs/PLAN.md](docs/PLAN.
 | 1 — Foundation | **Approved** (2026-11-10) | See "Phase 1" below. |
 | 2 — Queue engine | **Approved** (2026-11-10) | See "Phase 2" below. |
 | 3 — Live view | **Approved** (2026-11-10) | See "Phase 3" below. |
-| 4 — ETA and SMS | **Done, awaiting owner review** (2026-11-10) | See "Phase 4" below. |
-| 5 — Admin and deploy | Not started | |
+| 4 — ETA and SMS | **Approved** (2026-11-10) | See "Phase 4" below. |
+| 5 — Admin and deploy | **Done, awaiting owner review** (2026-11-10) | See "Phase 5" below. Docker image not built here (no Docker on this machine). |
 
 ## How to run (local)
 
@@ -134,15 +134,87 @@ Arrived → next → next → "ভিতরে গেছেন" → emergency ca
 5. **Delay broadcast is not an automatic SMS**: it can be sent more than once and doesn't count toward the 3-per-token limit. Recipients are WAITING patients with a phone (not the one inside, not skipped/no-show).
 6. **SMS provider is chosen by `SMS_PROVIDER`** (only `console` exists). A real Bangladeshi gateway plugs in by implementing `SmsProvider.send` (return `retryable: false` for permanent errors such as an invalid number).
 
+## Phase 5 — what exists
+
+- Daily reports (`src/lib/reports.ts`, `src/components/daily-report.tsx`):
+  - **Clinic admin:** `/admin/reports` (new "রিপোর্ট" tab), showing every sitting in the organization for a chosen date.
+  - **Doctor:** `/console/reports`, showing their own sittings only (new "কনসোল · রিপোর্ট" tabs on the doctor's console).
+  - **Per sitting:**
+    - patients served out of booked;
+    - average wait;
+    - average consultation time;
+    - doctor's late-arrival minutes;
+    - no-shows;
+    - number of out-of-order calls.
+  - **Day totals:** shown when there is more than one sitting, weighted by patient.
+  - **Out-of-order list:** highlighted. Each entry shows the serial, patient, reason, note, who was jumped, the time, the doctor and who made the call.
+- Super admin SMS usage: `/super/sms` (new tab next to "প্রতিষ্ঠান"). For a chosen month (Dhaka time), every organization is listed with:
+  - billable segments;
+  - sent SMS;
+  - failed;
+  - pending;
+
+  plus a totals row.
+- `src/instrumentation.ts` → `src/lib/bootstrap.ts`. On server start it:
+  - creates the first super admin from `SEED_SUPERADMIN_PHONE` / `SEED_SUPERADMIN_PASSWORD`, only if none exists;
+  - starts the SMS sweeper, so SMS queued before a restart get sent.
+- `Dockerfile` (multi-stage, `node:22-bookworm-slim`), `docker-entrypoint.sh` and `.dockerignore`:
+  - The runtime is the Next standalone server plus a small separate Prisma CLI install used for `migrate deploy` on start.
+  - Migrations use `DIRECT_DATABASE_URL` when set.
+- `README.md`: roles and pages, environment variables, FlyNode deploy steps, `docker build`/`docker run`, local development, checks.
+
+### Verified
+- tsc clean, ESLint clean.
+- Vitest 121/121: 80 unit (7 new for reports) and 41 integration (3 new). The new integration tests cover:
+  - report numbers and the out-of-order row with reason, note, jumped serials and actor;
+  - a doctor-scoped report;
+  - cross-tenant isolation;
+  - SMS usage per org and month.
+- E2E 5/5. The out-of-order test now also checks the call in `/admin/reports`.
+- Container steps simulated without Docker:
+  1. Ran the migrator stage (a separate `prisma@7.10.1` + `dotenv` install and `migrate deploy`) against a fresh database: both migrations applied.
+  2. Ran the standalone server with only explicit env vars (no `.env`). The super admin was created on start, login worked, `/super/sms` returned 200, and static CSS was served.
+  3. Dropped the scratch database afterwards.
+- 360px in the browser:
+  - Admin report and doctor report: no horizontal scroll, correct tab highlighted, the doctor sees only their own sitting.
+  - SMS usage page.
+  - Found and fixed: an early "arrival" from a test tap showed as "৯৩১ মিনিট আগে". It now shows "সময়মতো" (see decision 3).
+  - The SMS page was checked with a temporary super admin in the dev DB, which was removed afterwards.
+- **Not verified:** `docker build` / `docker run` of the actual image, because this machine has no Docker. The first FlyNode build is the real test.
+
+## Decisions (Phase 5)
+
+1. **Average wait** = from the scheduled start (or from when the serial was added, if that was later, e.g. a walk-in) until the patient was called. Only patients whose consultation finished count. Serials booked by phone in the morning don't count the hours before the sitting.
+   - A re-queued patient's wait runs to their last call.
+   - Called before the scheduled start → 0.
+2. **Average consultation** uses the same rule as the ETA: from "entered" (or the call) to "done", ignoring under 1 minute and over 3 hours.
+3. **Late arrival** = when the doctor arrived (first "next" or "doctor arrived" tap) minus the scheduled start.
+   - Arriving early shows as "সময়মতো" and counts as 0 in the day average.
+   - "আসেননি" if they never arrived.
+   - Cancelled sittings are left out of the report.
+4. **Reports are one day at a time** (date picker, today by default). No date ranges, charts or export: the brief asks for daily reports.
+5. **Doctors' reports** live under `/console/reports`, since the doctor's home is the console. Assistants have no reports (PLAN §9).
+6. **Billing counts segments of SENT messages** for the month in Dhaka time; failed and pending are shown separately and not billed. Every organization is listed, including those with 0.
+7. **First super admin on production** is created by the server at start from env vars, so the production image needs neither the seed (which adds demo data) nor `tsx`. If a super admin already exists, the variables do nothing.
+8. **Migrations run on every container start** (`prisma migrate deploy`, which only applies new migrations). The Prisma CLI is installed in its own folder in the image, because the standalone output doesn't include it.
+
 ## Known issues / notes
 
 - Dev machine (Windows 10) has no Docker / psql; `npm run db:start` (embedded-postgres) is the local DB. Keep it running in its own terminal.
 - npm `latest` for `prisma` is an 8.0 RC; we pin 7.10.1. TypeScript pinned to 5.9.3.
-- The admin session page shows the last 30 audit events; full daily reports are Phase 5.
+- The admin session page shows the last 30 audit events; the daily report (`/admin/reports`) lists every out-of-order call.
 - Dev only: if the dev server hot-reloads while a form is submitted, the server action can be missed (seen once on login, during a hot reload). Believed to be dev-only; not yet checked against a production build.
 - `npm run db:reset` is destructive (drops the dev DB); Prisma will ask for confirmation.
 - No git remote configured. Don't push without asking.
-- `next start` warns that it "does not work with output: standalone"; it works for the e2e run. The Phase 5 Dockerfile will use `node .next/standalone/server.js` as Next recommends.
+- `next start` warns that it "does not work with output: standalone"; it works for the e2e run. The Docker image runs `node server.js` from the standalone output, as Next recommends.
+- `next build` fails with EBUSY if the dev server (or a standalone server) is running from `.next`; stop it before `npm run test:e2e`.
 - SSE connections are not rate-limited per IP yet (public links are unguessable: ~57.8-bit codes / UUIDs). Revisit before launch if needed.
 - A `pg` deprecation warning ("client.query() when the client is already executing a query") appears in tests; it comes from inside `@prisma/adapter-pg`'s transaction handling, not our code. Harmless now; recheck when upgrading Prisma / pg 9.
 - SMS links use `APP_BASE_URL`; set it to the real HTTPS domain in production (Q8 — a short domain saves SMS segments).
+- **Docker image not built locally** (no Docker here); the container steps were simulated (see Phase 5 → Verified). The first FlyNode build is the real check.
+- **`.env.example` may need two lines added by the owner** (agent edits to env files are blocked):
+  - `DIRECT_DATABASE_URL=` with a comment "only if DATABASE_URL goes through a pooler";
+  - `SEED_SUPERADMIN_PHONE` / `SEED_SUPERADMIN_PASSWORD`, if they're missing.
+
+  README lists every variable.
+- Open questions: Q2 (does FlyNode's database go through a pooler?) and Q8 (production domain).

@@ -7,10 +7,14 @@ import { cx } from "./ui";
 /** Section tabs. Wraps onto two lines on small phones instead of scrolling sideways. */
 export function NavTabs({ items }: { items: Array<{ href: string; label: string }> }) {
   const pathname = usePathname();
+  // The most specific matching tab wins ("/console/reports" over "/console").
+  const activeHref = items
+    .filter((i) => pathname === i.href || pathname.startsWith(`${i.href}/`))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
   return (
     <nav aria-label="Sections" className="flex flex-wrap gap-1">
       {items.map((item) => {
-        const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+        const active = item.href === activeHref;
         return (
           <Link
             key={item.href}

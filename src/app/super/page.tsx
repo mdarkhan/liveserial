@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db";
 import { bn, formatDateShort } from "@/lib/format";
 import { t } from "@/lib/i18n/bn";
 import { createOrganization, toggleOrganization } from "./actions";
+import { superNav } from "./super-nav";
 
 export const metadata: Metadata = { title: t.org.title };
 
@@ -18,7 +19,7 @@ export default async function SuperPage() {
   });
 
   return (
-    <AppShell user={user}>
+    <AppShell user={user} nav={superNav}>
       <PageHeader title={t.org.title} />
       <div className="grid gap-5 lg:grid-cols-[1fr_22rem]">
         <div>
