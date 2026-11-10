@@ -9,7 +9,7 @@ Read [docs/BRIEF.md](docs/BRIEF.md) (requirements) and [docs/PLAN.md](docs/PLAN.
 | 0 — Plan | **Approved** (2026-11-10) | Owner chose embedded Postgres for local dev. |
 | 1 — Foundation | **Approved** (2026-11-10) | See "Phase 1" below. |
 | 2 — Queue engine | **Approved** (2026-11-10) | See "Phase 2" below. |
-| 3 — Live view | **In progress** (WIP commit) | See "Phase 3 — status" below. |
+| 3 — Live view | **Done, awaiting owner review** (2026-11-10) | See "Phase 3" below. |
 | 4 — ETA and SMS | Not started | |
 | 5 — Admin and deploy | Not started | |
 
@@ -84,31 +84,38 @@ Arrived → next → next → "ভিতরে গেছেন" → emergency ca
 10. **Out-of-order reasons** as proposed in Phase 0 (no change requested).
 11. Next's dev badge turned off (it covered the big button). Dev preview pinned to port 3002 in `.claude/launch.json`.
 
-## Phase 3 — status (work in progress)
+## Phase 3 — what exists
 
-Done (typecheck + lint clean at last check; unit tests 45/45):
-- `src/lib/snapshot.ts`: load a session once, project per viewer (console / display / patient). Unit tests assert patient + display views contain no names, phones or other links.
-- `src/lib/realtime.ts`: hub with one `LISTEN liveserial` connection (uses `DIRECT_DATABASE_URL` if set, else `DATABASE_URL`), coalesced reloads, 60 s refresh, reconnect with backoff; `sseResponse()` helper with `ping` events every 20 s.
-- Routes: `/api/live/session/[id]?view=console|display` and `/api/live/t/[code]`; `?once=1` returns JSON (polling fallback). Verified with curl: an update reached a patient stream ~0.3 s after "next".
-- `src/lib/use-live.ts`: SSE client hook, 15 s polling fallback, 45 s stale watchdog, retries SSE every 2 min.
-- `/t/[publicCode]` patient page (server-rendered, noindex, no-referrer) — checked at 360px, renders correctly, no horizontal scroll.
-- `/display/[sessionId]` waiting-room page (wake lock, clock) — written, NOT yet checked in a browser.
-- Console now uses the live hook instead of the 10 s poll — NOT yet re-checked in a browser.
-- Admin session page links to the waiting-room screen. Bangla 404 page.
+- `src/lib/snapshot.ts`: a session is loaded once per change, then projected per viewer: console (staff), display (serials only), patient (own serial + position only). Unit tests assert the public views contain no names, phones or other patients' links.
+- `src/lib/realtime.ts`: one `LISTEN liveserial` connection per instance (`DIRECT_DATABASE_URL` if set, else `DATABASE_URL`), coalesced reloads, 60 s refresh, reconnect with backoff; SSE helper with `ping` events every 20 s.
+- Routes: `/api/live/session/[id]?view=console|display`, `/api/live/t/[code]`; `?once=1` returns JSON for the polling fallback.
+- `src/lib/use-live.ts`: SSE in the browser; falls back to polling every 15 s if the stream errors or goes quiet for 45 s; retries SSE every 2 min.
+- `/t/[publicCode]`: patient page — server-rendered first view, doctor/chamber/date, session banner ("ডাক্তার এখনো আসেননি" + scheduled time + announced delay), now serving, your serial, people ahead, "এখন রওনা দিন", "লাইভ / সর্বশেষ আপডেট". `noindex`, `no-referrer`. Bangla 404 for unknown links.
+- `/display/[sessionId]`: waiting-room screen (landscape and portrait), now serving + next three, clock, keeps the screen awake where supported.
+- Console uses the same live stream (replacing the Phase 2 poll). Admin session page links to the display.
 
-Left for Phase 3:
-1. Check `/display/[id]` in a browser (landscape 1280×720 and portrait tablet) and the console live updates with two tabs.
-2. Playwright e2e (3 flows: console next; patient page updates within 5 s without reload; out-of-order with reason shows in audit). Plan: `playwright.config.ts` using installed Edge (`channel: "msedge"`) to avoid downloading browsers; run against `next start` on port 3100 with the `liveserial_test` DB; global setup creates its own org/users.
-3. Add `DIRECT_DATABASE_URL` (optional) to `.env.example`.
-4. Full verify (typecheck, lint, all tests, build), PROGRESS decisions, final Phase 3 commit.
+### Verified
+- `curl` on a patient stream: an update arrived ~0.3 s after "next".
+- Playwright e2e (`npm run test:e2e`, Edge, 360px): 4/4 pass — console next; patient page updates within 5 s without reload and shows no other names; out-of-order call needs a reason and appears highlighted in the admin audit log with reason + jumped serials; display shows now serving + next three.
+- Visual checks: patient page at 360px, display at 1280×720 and 768×1024 (live update observed without reload).
+
+## Decisions (Phase 3)
+
+1. Display access = the session's random UUID in the link (no login), as proposed; it shows serial numbers and doctor/chamber name only.
+2. "People ahead" counts the patient inside; "এখন রওনা দিন" shows when people ahead ≤ the chamber threshold and the patient is waiting.
+3. The patient page has no JS-free auto-refresh (React would hoist a `<noscript>` meta refresh into `<head>` and refresh everyone); instead the server-rendered page is complete and a `<noscript>` link reloads it.
+4. ETA ranges are NOT on the patient page yet — they come with the ETA engine in Phase 4.
+5. E2E uses the installed Microsoft Edge (`channel: "msedge"`) so no browser download is needed; it runs `next build` then `next start` on port 3100 against `liveserial_test`, and creates its own clinic each run.
+6. `DIRECT_DATABASE_URL` (optional) is read for LISTEN. It is NOT yet in `.env.example`: edits to env files are blocked by the local permission settings — add this line by hand:
+   `# DIRECT_DATABASE_URL="postgresql://user:pass@host:5432/liveserial"  (only if DATABASE_URL goes through a transaction-mode pooler)`
 
 ## Known issues / notes
 
 - Dev machine (Windows 10) has no Docker / psql; `npm run db:start` (embedded-postgres) is the local DB. Keep it running in its own terminal.
 - npm `latest` for `prisma` is an 8.0 RC; we pin 7.10.1. TypeScript pinned to 5.9.3.
-- Patient links (`/t/...`) shown on the admin session page 404 until Phase 3.
-- Playwright e2e tests (brief: 2–3 critical flows) are not written yet; planned for Phase 3 together with the patient live-update flow. Phase 2 flows were checked by hand in the browser (see above).
 - The admin session page shows the last 30 audit events; full daily reports are Phase 5.
 - Dev only: if the dev server hot-reloads while a form is submitted, the server action can be missed (seen once on login, during a hot reload). Believed to be dev-only; not yet checked against a production build.
 - `npm run db:reset` is destructive (drops the dev DB); Prisma will ask for confirmation.
 - No git remote configured. Don't push without asking.
+- `next start` warns that it "does not work with output: standalone"; it works for the e2e run. The Phase 5 Dockerfile will use `node .next/standalone/server.js` as Next recommends.
+- SSE connections are not rate-limited per IP yet (public links are unguessable: ~57.8-bit codes / UUIDs). Revisit before launch if needed.

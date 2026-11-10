@@ -52,7 +52,7 @@ export function DisplayLive({ sessionId, initial }: { sessionId: string; initial
           className="flex flex-col items-center justify-center rounded-[3vmin] bg-primary p-[2vmin] text-white"
         >
           <h2 className="text-[6vmin] font-semibold">{d.nowServing}</h2>
-          <p className="tabular text-[34vmin] font-bold leading-none" aria-live="polite">
+          <p className="tabular text-[32vmin] font-bold leading-none" aria-live="polite">
             {data.nowServing !== null ? bn(data.nowServing) : "—"}
           </p>
         </section>
@@ -64,7 +64,7 @@ export function DisplayLive({ sessionId, initial }: { sessionId: string; initial
           ) : (
             <ol className="flex flex-1 flex-col justify-around">
               {data.next.map((n) => (
-                <li key={n} className="tabular text-center text-[14vmin] font-bold leading-none text-ink">
+                <li key={n} className="tabular text-center text-[12vmin] font-bold leading-none text-ink">
                   {bn(n)}
                 </li>
               ))}

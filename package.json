@@ -20,7 +20,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "next build && playwright test"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",
