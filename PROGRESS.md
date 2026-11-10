@@ -12,8 +12,8 @@ Read [docs/BRIEF.md](docs/BRIEF.md) (requirements) and [docs/PLAN.md](docs/PLAN.
 | 3 — Live view | **Approved** (2026-11-10) | See "Phase 3" below. |
 | 4 — ETA and SMS | **Approved** (2026-11-10) | See "Phase 4" below. |
 | 5 — Admin and deploy | **Done, awaiting owner review** (2026-11-10) | See "Phase 5" below. Deployed to FlyNode 2026-11-10 (see "Deployment"). |
-| 6 — Optional UX features | **Done, awaiting owner review** (2026-11-10) | See "Phase 6" below. Not deployed yet. |
-| 7 — Break timer, not coming, SMS cost/limit | **Done, awaiting owner review** (2026-11-10) | See "Phase 7" below. Not deployed yet. |
+| 6 — Optional UX features | **Done, awaiting owner review** (2026-11-10) | See "Phase 6" below. Deployed to FlyNode 2026-11-11 (commit 47a3089). |
+| 7 — Break timer, not coming, SMS cost/limit | **Done, awaiting owner review** (2026-11-10) | See "Phase 7" below. Deployed to FlyNode 2026-11-11 (commit 47a3089). |
 
 ## How to run (local)
 
