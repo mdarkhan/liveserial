@@ -6,7 +6,8 @@ import { Badge, Card, CardTitle, EmptyState, List, ListItem, PageHeader } from "
 import { requireUser } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { FEATURES, resolveFeatures } from "@/lib/features";
-import { bn, formatDateShort } from "@/lib/format";
+import { bn, dhakaDateString, formatDateShort } from "@/lib/format";
+import { getSmsUsage } from "@/lib/reports";
 import { t } from "@/lib/i18n/bn";
 import { createOrganization, toggleOrganization } from "./actions";
 import { superNav } from "./super-nav";
@@ -15,14 +16,44 @@ export const metadata: Metadata = { title: t.org.title };
 
 export default async function SuperPage() {
   const user = await requireUser(["SUPER_ADMIN"]);
-  const orgs = await prisma.organization.findMany({
-    orderBy: [{ isActive: "desc" }, { createdAt: "desc" }],
-    include: { _count: { select: { users: true, doctors: true } } },
-  });
+  const [orgs, usage] = await Promise.all([
+    prisma.organization.findMany({
+      orderBy: [{ isActive: "desc" }, { createdAt: "desc" }],
+      include: { _count: { select: { users: true, doctors: true } } },
+    }),
+    getSmsUsage(dhakaDateString().slice(0, 7)),
+  ]);
+  const usageOf = new Map(usage.map((u) => [u.orgId, u]));
+  const warnings = usage.filter((u) => u.limitStatus === "OVER" || u.limitStatus === "NEAR");
 
   return (
     <AppShell user={user} nav={superNav}>
       <PageHeader title={t.org.title} />
+      {warnings.length > 0 && (
+        <section
+          role="alert"
+          aria-labelledby="sms-alert-h"
+          className="mb-5 rounded-[var(--radius-card)] border-2 border-warning/50 bg-warning-soft p-4 text-warning-ink"
+        >
+          <h2 id="sms-alert-h" className="mb-2 font-bold">
+            <span aria-hidden="true">⚠ </span>
+            {t.org.smsAlertTitle}
+          </h2>
+          <ul className="space-y-1">
+            {warnings.map((w) => (
+              <li key={w.orgId} className="flex flex-wrap items-center gap-x-2">
+                <Link href="/super/sms" className="font-semibold underline">
+                  {w.name}
+                </Link>
+                <span className="tabular">{t.org.smsOfLimit(bn(w.sentSegments), bn(w.limit ?? 0))}</span>
+                <Badge tone={w.limitStatus === "OVER" ? "danger" : "warning"}>
+                  {w.limitStatus === "OVER" ? t.org.smsOver : t.org.smsNear}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <div className="grid gap-5 lg:grid-cols-[1fr_22rem]">
         <div>
           {orgs.length === 0 ? (
@@ -48,6 +79,8 @@ export default async function SuperPage() {
                     </p>
                   </div>
                   <Badge tone={o.isActive ? "success" : "neutral"}>{o.isActive ? t.common.active : t.common.inactive}</Badge>
+                  {usageOf.get(o.id)?.limitStatus === "OVER" && <Badge tone="danger">{t.org.smsOver}</Badge>}
+                  {usageOf.get(o.id)?.limitStatus === "NEAR" && <Badge tone="warning">{t.org.smsNear}</Badge>}
                   <Link href={`/super/orgs/${o.id}`} className="inline-flex min-h-12 items-center px-2 font-medium text-primary underline">
                     {t.org.features}
                   </Link>

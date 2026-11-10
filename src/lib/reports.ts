@@ -199,13 +199,19 @@ export type SmsUsageRow = {
   sentSegments: number;
   failed: number;
   pending: number;
+  /** Monthly allowance in segments (null = none) and where this month stands against it. */
+  limit: number | null;
+  limitStatus: SmsLimitStatus;
 };
 
 /** SMS per organization for one Dhaka month (super admin, for billing). All organizations are listed. */
 export async function getSmsUsage(ym: string): Promise<SmsUsageRow[]> {
   const { from, to } = dhakaMonthRange(ym);
   const [orgs, groups] = await Promise.all([
-    prisma.organization.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, slug: true } }),
+    prisma.organization.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, slug: true, smsMonthlyLimit: true },
+    }),
     prisma.smsMessage.groupBy({
       by: ["organizationId", "status"],
       where: { createdAt: { gte: from, lt: to } },
@@ -228,7 +234,40 @@ export async function getSmsUsage(ym: string): Promise<SmsUsageRow[]> {
         sentSegments: sent.reduce((a, g) => a + (g._sum.segments ?? 0), 0),
         failed: count(get(o.id, ["FAILED"])),
         pending: count(get(o.id, ["QUEUED", "SENDING"])),
+        limit: o.smsMonthlyLimit,
+        limitStatus: smsLimitStatus(sent.reduce((a, g) => a + (g._sum.segments ?? 0), 0), o.smsMonthlyLimit),
       };
     })
     .sort((a, b) => b.sentSegments - a.sentSegments || a.name.localeCompare(b.name));
+}
+
+// ───────────── SMS allowance ─────────────
+
+export type SmsLimitStatus = "NONE" | "OK" | "NEAR" | "OVER";
+/** Warn from this share of the allowance. */
+export const SMS_NEAR_SHARE = 0.8;
+
+/** Billable segments used vs. the organization's monthly allowance. */
+export function smsLimitStatus(used: number, limit: number | null): SmsLimitStatus {
+  if (limit === null || limit <= 0) return "NONE";
+  if (used > limit) return "OVER";
+  if (used >= limit * SMS_NEAR_SHARE) return "NEAR";
+  return "OK";
+}
+
+/** One organization's SMS for a Dhaka month (clinic admin's own view). */
+export async function getOrgSmsMonth(orgId: string, ym: string) {
+  const { from, to } = dhakaMonthRange(ym);
+  const groups = await prisma.smsMessage.groupBy({
+    by: ["status"],
+    where: { organizationId: orgId, createdAt: { gte: from, lt: to } },
+    _count: { _all: true },
+    _sum: { segments: true },
+  });
+  const sent = groups.find((g) => g.status === "SENT");
+  return {
+    sent: sent?._count._all ?? 0,
+    sentSegments: sent?._sum.segments ?? 0,
+    failed: groups.find((g) => g.status === "FAILED")?._count._all ?? 0,
+  };
 }

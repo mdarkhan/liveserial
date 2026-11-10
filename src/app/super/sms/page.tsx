@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { AppShell } from "@/components/app-shell";
-import { buttonClass, EmptyState, List, ListItem, PageHeader } from "@/components/ui";
+import { Badge, buttonClass, EmptyState, List, ListItem, PageHeader } from "@/components/ui";
 import { requireUser } from "@/lib/access";
 import { bn, dhakaDateString } from "@/lib/format";
 import { t } from "@/lib/i18n/bn";
@@ -45,10 +45,27 @@ export default async function SmsUsagePage({ searchParams }: PageProps<"/super/s
       ) : (
         <List>
           {rows.map((r) => (
-            <ListItem key={r.orgId}>
+            <ListItem
+              key={r.orgId}
+              className={
+                r.limitStatus === "OVER"
+                  ? "border-l-4 border-danger bg-danger-soft"
+                  : r.limitStatus === "NEAR"
+                    ? "border-l-4 border-warning bg-warning-soft"
+                    : undefined
+              }
+            >
               <div className="min-w-0 flex-1">
-                <p className="font-semibold">{r.name}</p>
+                <p className="font-semibold">
+                  {r.name}{" "}
+                  {r.limitStatus === "OVER" && <Badge tone="danger">{t.org.smsOver}</Badge>}
+                  {r.limitStatus === "NEAR" && <Badge tone="warning">{t.org.smsNear}</Badge>}
+                </p>
                 <p className="font-mono text-sm text-ink-muted">{r.slug}</p>
+                <p className="text-sm text-ink-muted">
+                  {u.limit}:{" "}
+                  {r.limit !== null ? <span className="tabular">{t.org.smsOfLimit(bn(r.sentSegments), bn(r.limit))}</span> : u.noLimit}
+                </p>
               </div>
               <dl className="grid w-full grid-cols-2 gap-x-4 gap-y-1 text-sm sm:w-auto sm:grid-cols-4">
                 <div>

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { dateOnly, dhakaDateString, dhakaWallTimeToUtc } from "@/lib/format";
 import { addTokens, callNext, callToken, tokenAction, type QueueCtx } from "@/lib/queue-service";
 import { getDailyReport, getSmsUsage } from "@/lib/reports";
+import { flushOutbox } from "@/lib/sms";
 
 afterAll(() => prisma.$disconnect());
 
@@ -94,6 +95,9 @@ describe("daily report", () => {
 describe("SMS usage", () => {
   it("counts sent messages and billable segments per organization for the month", async () => {
     const d = await makeDay(); // 4 creation SMS queued
+    // The outbox sends them in the background after each change; let it finish first,
+    // so it can't overwrite the statuses this test sets below.
+    await flushOutbox();
     const rows = await prisma.smsMessage.findMany({ where: { organizationId: d.org.id }, orderBy: { createdAt: "asc" } });
     expect(rows).toHaveLength(4);
     await prisma.smsMessage.updateMany({

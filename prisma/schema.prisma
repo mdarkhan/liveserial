@@ -67,6 +67,14 @@ enum QueueAction {
   DELAY_BROADCAST
   /// Reverses one earlier action (by its clientRequestId) within a short window.
   UNDO
+  /// The patient said "I'm not coming" from their link (no staff actor).
+  PATIENT_NOT_COMING
+}
+
+/// Kind of a timed doctor break (shown to patients and on the TV).
+enum BreakKind {
+  PRAYER
+  BREAK
 }
 
 enum OutOfOrderReason {
@@ -104,6 +112,8 @@ model Organization {
   /// Optional features switched on by the super admin: { "CONSOLE_UNDO": true, … }.
   /// Missing key = off. See src/lib/features.ts.
   features  Json     @default("{}")
+  /// Monthly SMS allowance in billable segments; the super admin is warned near/over it. null = no limit.
+  smsMonthlyLimit Int?
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
@@ -282,6 +292,9 @@ model Session {
   /// scheduledStartAt + N instead of the doctor's historical median delay.
   announcedDelayMinutes Int?
   doctorArrivedAt       DateTime?     @db.Timestamptz(3)
+  /// Timed break ("নামাজ, ১৫ মিনিট"): set with ON_BREAK, cleared on resume / end.
+  breakKind             BreakKind?
+  breakEndsAt           DateTime?     @db.Timestamptz(3)
   endedAt               DateTime?     @db.Timestamptz(3)
   /// Serial allocator; bumped while holding the session row lock.
   nextSerial            Int           @default(1)
@@ -323,6 +336,8 @@ model Token {
   calledAt         DateTime?   @db.Timestamptz(3)
   consultStartedAt DateTime?   @db.Timestamptz(3)
   completedAt      DateTime?   @db.Timestamptz(3)
+  /// Set when the patient cancelled from their link ("আমি আসছি না"); cleared if re-queued.
+  cancelledByPatientAt DateTime? @db.Timestamptz(3)
   createdById      String?
   createdAt        DateTime    @default(now()) @db.Timestamptz(3)
   updatedAt        DateTime    @updatedAt @db.Timestamptz(3)

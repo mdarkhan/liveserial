@@ -19,11 +19,18 @@ Live queue and wait-time estimate for doctor chambers in Bangladesh. Patients op
 
 ## Optional features
 
-Nine extras are switched on by the super admin per organization (`/super/orgs/<id>`), with per-doctor overrides. All of them are off until switched on:
+Twelve extras are switched on by the super admin per organization (`/super/orgs/<id>`), with per-doctor overrides. All of them are off until switched on:
 
-- **Patient page:** progress bar and "get ready", sound and vibration alert, "updated … seconds ago".
+- **Patient page:** progress bar and "get ready", sound and vibration alert, "updated … seconds ago", and an "আমি আসছি না" (not coming) button.
 - **Waiting-room TV:** chime and pop animation, Bangla announcement, big-number and fullscreen buttons.
-- **Console:** 5-second undo, returning-patient name from the phone number, install on home screen.
+- **Console:**
+  - 5-second undo;
+  - returning-patient name from the phone number;
+  - install on home screen;
+  - timed break ("নামাজ, ১৫ মিনিট"), shown to patients and on the TV and added to the wait estimate;
+  - SMS cost preview, with an "SMS খরচ" page for the clinic admin.
+
+The same page sets each organization's **monthly SMS limit** (in billable parts). `/super` and `/super/sms` warn from 80% and when it is exceeded. Sending is never blocked.
 
 **Announcement audio (optional):** put recordings in `public/audio/bn/`:
 

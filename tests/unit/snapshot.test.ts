@@ -5,7 +5,13 @@ import { resolveFeatures, type FeatureOverrides } from "@/lib/features";
 
 function session(
   statuses: TokenStatus[],
-  over: Partial<{ status: SessionStatus; threshold: number; features: FeatureOverrides }> = {},
+  over: Partial<{
+    status: SessionStatus;
+    threshold: number;
+    features: FeatureOverrides;
+    breakEndsAt: Date;
+    notComing: number[];
+  }> = {},
 ): SessionData {
   return {
     id: "s1",
@@ -18,6 +24,8 @@ function session(
     status: over.status ?? "RUNNING",
     announcedDelayMinutes: null,
     doctorArrivedAt: new Date("2026-11-10T11:20:00Z"),
+    breakKind: over.breakEndsAt ? "PRAYER" : null,
+    breakEndsAt: over.breakEndsAt ?? null,
     endedAt: null,
     nextSerial: statuses.length + 1,
     queueVersion: 7,
@@ -40,6 +48,7 @@ function session(
       calledAt: null,
       consultStartedAt: null,
       completedAt: null,
+      cancelledByPatientAt: status === "CANCELLED" && over.notComing?.includes(i + 1) ? new Date() : null,
     })),
   };
 }
@@ -62,7 +71,12 @@ describe("projectPatient", () => {
 
   it("gives an ETA range for a waiting patient (default 6 min × people ahead)", () => {
     // 3 ahead × 6 min = 18 → 15–25
-    expect(projectPatient(session(queue), "code5xxxxx")!.you.eta).toEqual({ low: 15, high: 25, doctorArrived: true });
+    expect(projectPatient(session(queue), "code5xxxxx")!.you.eta).toEqual({
+      low: 15,
+      high: 25,
+      doctorArrived: true,
+      includesBreak: false,
+    });
     expect(projectPatient(session(queue), "code2xxxxx")!.you.eta).toBeNull();
   });
 
@@ -127,8 +141,14 @@ describe("optional features in the views", () => {
       PATIENT_PROGRESS: false,
       PATIENT_ALERT: false,
       PATIENT_UPDATED_AGO: false,
+      PATIENT_NOT_COMING: false,
     });
-    expect(projectConsole(d).features).toEqual({ CONSOLE_UNDO: false, CONSOLE_LOOKUP: false });
+    expect(projectConsole(d).features).toEqual({
+      CONSOLE_UNDO: false,
+      CONSOLE_LOOKUP: false,
+      DOCTOR_BREAK_TIMER: false,
+      SMS_COST_PREVIEW: false,
+    });
   });
 
   it("each view carries only its own flags", () => {
@@ -140,5 +160,32 @@ describe("optional features in the views", () => {
 
   it("gives the patient a count of patients already seen (for the progress bar)", () => {
     expect(projectPatient(session(queue), "code5xxxxx")!.doneCount).toBe(1);
+  });
+});
+
+describe("timed break and 'not coming' in the views", () => {
+  it("shows the break only while on break", () => {
+    const ends = new Date("2026-11-10T12:00:00Z");
+    const now = new Date("2026-11-10T11:50:00Z");
+    const onBreak = session(queue, { status: "ON_BREAK", breakEndsAt: ends });
+    expect(projectDisplay(onBreak, now)).toMatchObject({ breakKind: "PRAYER", breakEndsAt: ends.toISOString() });
+    const p = projectPatient(onBreak, "code5xxxxx", now)!;
+    expect(p.session.breakEndsAt).toBe(ends.toISOString());
+    expect(p.you.eta!.includesBreak).toBe(true);
+
+    const running = session(queue, { status: "RUNNING", breakEndsAt: ends });
+    expect(projectDisplay(running, now).breakEndsAt).toBeNull();
+    expect(projectPatient(running, "code5xxxxx", now)!.you.eta!.includesBreak).toBe(false);
+  });
+
+  it("lists a patient who said 'not coming' with the away patients, but not a staff cancellation", () => {
+    const d = session(["WAITING", "CANCELLED", "CANCELLED", "SKIPPED"], { notComing: [2] });
+    const v = projectConsole(d);
+    expect(v.away.map((a) => [a.serial, a.notComing])).toEqual([
+      [2, true],
+      [4, false],
+    ]);
+    expect(projectPatient(d, "code2xxxxx")!.you.notComing).toBe(true);
+    expect(projectPatient(d, "code3xxxxx")!.you.notComing).toBe(false);
   });
 });

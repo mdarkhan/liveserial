@@ -176,14 +176,20 @@ export default async function SessionPage({ params }: PageProps<"/admin/sessions
             ) : (
               <List>
                 {session.events.map((e) => {
-                  const meta = (e.meta ?? {}) as { jumpedSerials?: number[]; minutes?: number; auto?: boolean };
+                  const meta = (e.meta ?? {}) as {
+                    jumpedSerials?: number[];
+                    minutes?: number;
+                    auto?: boolean;
+                    breakMinutes?: number;
+                    breakKind?: "PRAYER" | "BREAK";
+                  };
                   return (
                     <ListItem
                       key={String(e.id)}
                       className={e.isOutOfOrder ? "border-l-4 border-warning bg-warning-soft text-sm" : "text-sm"}
                     >
                       <span className="w-full text-ink-muted">
-                        <span className="tabular">{formatTime(e.createdAt)}</span> · {e.actor?.name ?? t.audit.system}
+                        <span className="tabular">{formatTime(e.createdAt)}</span> · {e.actor?.name ?? (e.action === "PATIENT_NOT_COMING" ? t.audit.patient : t.audit.system)}
                       </span>
                       <span className="-mt-2 min-w-0 flex-1">
                         <span className={e.isOutOfOrder ? "font-bold text-warning-ink" : "font-medium"}>
@@ -198,6 +204,12 @@ export default async function SessionPage({ params }: PageProps<"/admin/sessions
                           </span>
                         )}
                         {meta.auto && <span className="text-ink-muted"> · {t.audit.auto}</span>}
+                        {meta.breakMinutes && (
+                          <span>
+                            {" "}
+                            · {t.console.breakStart(t.console.breakKinds[meta.breakKind ?? "BREAK"], bn(meta.breakMinutes))}
+                          </span>
+                        )}
                         {e.action === "DELAY_SET" && meta.minutes !== undefined && (
                           <span> · {meta.minutes ? t.console.delayMinutes(bn(meta.minutes)) : t.console.delayNone}</span>
                         )}

@@ -15,7 +15,7 @@ import {
   type OutOfOrderReasonCode,
   type RequeueMode,
 } from "@/lib/queue";
-import type { Prisma, QueueAction, Session, SessionStatus, Token, TokenStatus } from "@/generated/prisma/client";
+import type { BreakKind, Prisma, QueueAction, Session, SessionStatus, Token, TokenStatus } from "@/generated/prisma/client";
 
 /**
  * Every change to a session's queue goes through runQueueAction:
@@ -54,6 +54,12 @@ export type QueueCtx = {
   sessionId: string;
   /** Client-generated UUID; a retry with the same id returns the first result. */
   clientRequestId: string;
+  /**
+   * Who is logged as the actor on QueueEvent. Defaults to userId; null for the
+   * patient's own "not coming" (userId is then "patient:<tokenId>", used only
+   * for idempotency).
+   */
+  actorId?: string | null;
 };
 
 type Tx = Prisma.TransactionClient;
@@ -184,7 +190,7 @@ async function logEvent(tx: Tx, ctx: QueueCtx, e: EventInput) {
       organizationId: ctx.orgId,
       sessionId: ctx.sessionId,
       tokenId: e.token?.id ?? null,
-      actorId: ctx.userId,
+      actorId: ctx.actorId === undefined ? ctx.userId : ctx.actorId,
       action: e.action,
       fromStatus: e.fromStatus ?? null,
       toStatus: e.toStatus ?? null,
@@ -203,7 +209,7 @@ async function setTokenStatus(
   token: Token,
   to: TokenStatus,
   action: QueueAction,
-  extra: Partial<Pick<Token, "calledAt" | "consultStartedAt" | "completedAt" | "queueOrder">> = {},
+  extra: Partial<Pick<Token, "calledAt" | "consultStartedAt" | "completedAt" | "queueOrder" | "cancelledByPatientAt">> = {},
   event: Omit<EventInput, "action" | "token" | "fromStatus" | "toStatus"> = {},
 ) {
   await tx.token.update({ where: { id: token.id }, data: { status: to, ...extra } });
@@ -349,7 +355,9 @@ export async function requeue(ctx: QueueCtx, tokenId: string, mode: RequeueMode)
     assertOpen(session);
     const tokens = await sessionTokens(tx, session.id);
     const token = findToken(tokens, tokenId);
-    if (!AWAY.includes(token.status)) throw new QueueError("INVALID", `Cannot re-queue ${token.status}`);
+    // Also a patient who said "not coming" from their link and then turned up after all.
+    const notComing = token.status === "CANCELLED" && token.cancelledByPatientAt !== null;
+    if (!AWAY.includes(token.status) && !notComing) throw new QueueError("INVALID", `Cannot re-queue ${token.status}`);
     const queueOrder = requeueOrder(mode, tokens);
     await setTokenStatus(
       tx,
@@ -357,8 +365,8 @@ export async function requeue(ctx: QueueCtx, tokenId: string, mode: RequeueMode)
       token,
       "WAITING",
       mode === "AFTER_CURRENT" ? "REQUEUE_AFTER_CURRENT" : "REQUEUE_AT_END",
-      { queueOrder, calledAt: null },
-      { meta: { serial: token.serial, queueOrder } },
+      { queueOrder, calledAt: null, ...(notComing ? { cancelledByPatientAt: null } : {}) },
+      { meta: { serial: token.serial, queueOrder, ...(notComing ? { afterNotComing: true } : {}) } },
     );
     return { serial: token.serial };
   });
@@ -366,7 +374,21 @@ export async function requeue(ctx: QueueCtx, tokenId: string, mode: RequeueMode)
 
 // ───────────── Session / doctor status ─────────────
 
-export async function setDoctorStatus(ctx: QueueCtx, action: DoctorStatusAction): Promise<{ status: SessionStatus }> {
+export const BREAK_MINUTES = [5, 10, 15, 20, 30, 45, 60] as const;
+
+/**
+ * Doctor status. A BREAK may carry a length and kind ("নামাজ, ১৫ মিনিট"): the
+ * patient page and TV then show when the doctor is expected back, and the ETA
+ * adds the remaining break. Resume / end clear it.
+ */
+export async function setDoctorStatus(
+  ctx: QueueCtx,
+  action: DoctorStatusAction,
+  timedBreak?: { minutes: number; kind: BreakKind } | null,
+): Promise<{ status: SessionStatus }> {
+  if (timedBreak && (action !== "BREAK" || !Number.isInteger(timedBreak.minutes) || timedBreak.minutes < 1 || timedBreak.minutes > 180)) {
+    throw new QueueError("INVALID", "Bad break");
+  }
   return runQueueAction(ctx, `DOCTOR_${action}`, async (tx, session) => {
     const to = sessionTransition(action, session.status);
     if (!to) throw new QueueError(CLOSED_SESSION.includes(session.status) ? "SESSION_CLOSED" : "INVALID");
@@ -383,9 +405,17 @@ export async function setDoctorStatus(ctx: QueueCtx, action: DoctorStatusAction)
         status: to,
         ...(to === "DOCTOR_ARRIVED" ? { doctorArrivedAt: now } : {}),
         ...(to === "ENDED" ? { endedAt: now } : {}),
+        ...(to === "ON_BREAK" && timedBreak
+          ? { breakKind: timedBreak.kind, breakEndsAt: new Date(now.getTime() + timedBreak.minutes * 60_000) }
+          : { breakKind: null, breakEndsAt: null }),
       },
     });
-    await logEvent(tx, ctx, { action: "SESSION_STATUS_CHANGED", fromStatus: session.status, toStatus: to });
+    await logEvent(tx, ctx, {
+      action: "SESSION_STATUS_CHANGED",
+      fromStatus: session.status,
+      toStatus: to,
+      ...(to === "ON_BREAK" && timedBreak ? { meta: { breakMinutes: timedBreak.minutes, breakKind: timedBreak.kind } } : {}),
+    });
     return { status: to };
   });
 }
@@ -655,5 +685,46 @@ export async function undoAction(ctx: QueueCtx, undoOf: string): Promise<{ undon
       }
     }
     return { undone: original.action, serials };
+  });
+}
+
+// ───────────── Patient: "I'm not coming" ─────────────
+
+const NOT_COMING_FROM: TokenStatus[] = ["WAITING", "SKIPPED"];
+
+/**
+ * The patient taps "আমি আসছি না" on their link. Public: the unguessable public
+ * code is the key, and it can only cancel that one serial. The token becomes
+ * CANCELLED with cancelledByPatientAt set, so the console shows it ("আসছেন না")
+ * and the assistant can put it back in line if the patient turns up after all.
+ * Idempotent by clientRequestId; logged as PATIENT_NOT_COMING with no staff actor.
+ */
+export async function patientNotComing(publicCode: string, clientRequestId: string): Promise<{ serial: number }> {
+  const token = await prisma.token.findUnique({
+    where: { publicCode },
+    select: { id: true, organizationId: true, sessionId: true },
+  });
+  if (!token) throw new QueueError("NOT_FOUND");
+  const ctx: QueueCtx = {
+    orgId: token.organizationId,
+    userId: `patient:${token.id}`,
+    actorId: null,
+    sessionId: token.sessionId,
+    clientRequestId,
+  };
+  return runQueueAction(ctx, "PATIENT_NOT_COMING", async (tx, session) => {
+    assertOpen(session);
+    const t = findToken(await sessionTokens(tx, session.id), token.id);
+    if (!NOT_COMING_FROM.includes(t.status)) throw new QueueError("INVALID", `Cannot cancel ${t.status}`);
+    await setTokenStatus(
+      tx,
+      ctx,
+      t,
+      "CANCELLED",
+      "PATIENT_NOT_COMING",
+      { cancelledByPatientAt: new Date() },
+      { meta: { serial: t.serial, byPatient: true } },
+    );
+    return { serial: t.serial };
   });
 }

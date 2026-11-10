@@ -1,5 +1,6 @@
 import { AppShell } from "@/components/app-shell";
 import { requireOrgUser } from "@/lib/access";
+import { resolveFeatures } from "@/lib/features";
 import { t } from "@/lib/i18n/bn";
 
 const nav = [
@@ -13,8 +14,12 @@ const nav = [
 
 export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
   const { user } = await requireOrgUser(["ORG_ADMIN"]);
+  // "SMS খরচ" only where the super admin switched the SMS cost preview on.
+  const items = resolveFeatures(user.organization?.features).SMS_COST_PREVIEW
+    ? [...nav, { href: "/admin/sms", label: t.nav.smsCost }]
+    : nav;
   return (
-    <AppShell user={user} nav={nav}>
+    <AppShell user={user} nav={items}>
       {children}
     </AppShell>
   );

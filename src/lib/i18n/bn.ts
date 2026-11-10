@@ -87,6 +87,7 @@ export const bnDict = {
     console: "কনসোল",
     reports: "রিপোর্ট",
     smsUsage: "SMS ব্যবহার",
+    smsCost: "SMS খরচ",
   },
 
   org: {
@@ -103,6 +104,10 @@ export const bnDict = {
     created: "প্রতিষ্ঠান তৈরি হয়েছে।",
     features: "ফিচার",
     featuresOn: (n: string, total: string) => `চালু ফিচার: ${n}/${total}`,
+    smsAlertTitle: "SMS সীমা সতর্কতা (এই মাস)",
+    smsOver: "সীমা ছাড়িয়েছে",
+    smsNear: "সীমার কাছে",
+    smsOfLimit: (used: string, limit: string) => `${used} / ${limit} ভাগ`,
   },
 
   features: {
@@ -123,6 +128,12 @@ export const bnDict = {
     saved: "সেভ হয়েছে। খোলা পাতাগুলোতে এক মিনিটের মধ্যে কার্যকর হবে।",
     overrides: (n: string) => `আলাদা সেটিং: ${n}টি`,
     orgOnly: "শুধু পুরো প্রতিষ্ঠানের জন্য",
+    smsLimitTitle: "মাসিক SMS সীমা",
+    smsLimitHint: "বিলযোগ্য ভাগের হিসাবে। সীমার ৮০% পেরোলে বা ছাড়ালে সুপার অ্যাডমিনের পাতায় সতর্কতা দেখাবে। SMS বন্ধ হবে না। খালি রাখলে সীমা নেই।",
+    smsLimitLabel: "প্রতি মাসে সর্বোচ্চ (ভাগ)",
+    smsLimitSave: "সীমা সেভ করুন",
+    smsLimitSaved: "সীমা সেভ হয়েছে।",
+    smsLimitNow: (used: string) => `এ মাসে এখন পর্যন্ত: ${used} ভাগ`,
     groups: {
       patient: "রোগীর পেজ (SMS-এর লিংক)",
       display: "ওয়েটিং-রুম টিভি",
@@ -132,23 +143,29 @@ export const bnDict = {
       PATIENT_PROGRESS: "লাইন কতটা এগোল — প্রোগ্রেস বার",
       PATIENT_ALERT: "পালা কাছে এলে শব্দ ও ভাইব্রেশন",
       PATIENT_UPDATED_AGO: "\"সর্বশেষ আপডেট: … সেকেন্ড আগে\"",
+      PATIENT_NOT_COMING: "রোগীর লিংকে \"আমি আসছি না\" বোতাম",
       DISPLAY_CHIME: "নতুন সিরিয়াল ডাকলে টুং শব্দ ও বড় অ্যানিমেশন",
       DISPLAY_ANNOUNCE: "বাংলায় সিরিয়াল ঘোষণা",
       DISPLAY_CONTROLS: "ফুলস্ক্রিন ও বড় হরফের মোড",
       CONSOLE_UNDO: "ভুল ট্যাপের পর \"পূর্বাবস্থায় ফেরান\"",
       CONSOLE_LOOKUP: "মোবাইল নম্বর দিলে আগের রোগীর নাম",
       CONSOLE_PWA: "হোম স্ক্রিনে ইনস্টল (অ্যাপের মতো আইকন)",
+      DOCTOR_BREAK_TIMER: "সময়সহ বিরতি (\"নামাজ, ১৫ মিনিট\")",
+      SMS_COST_PREVIEW: "SMS খরচের প্রিভিউ (কত ভাগে যাবে)",
     },
     hints: {
       PATIENT_PROGRESS: "২–৩ জন বাকি থাকলে পেজ হলুদ/সবুজ হয়ে \"প্রস্তুত থাকুন\" দেখাবে।",
       PATIENT_ALERT: "রোগী একবার \"সতর্কতা চালু করুন\" চাপলে, পেজ খোলা থাকা অবস্থায় বাজবে।",
       PATIENT_UPDATED_AGO: "তথ্য কত সেকেন্ড আগের, তা দেখায়; পুরনো হলে সতর্ক করে।",
+      PATIENT_NOT_COMING: "রোগী জানালে সিরিয়ালটি সরে যায় আর কনসোলে সাথে সাথে দেখায়। ভুল হলে সহকারী আবার লাইনে দিতে পারেন।",
       DISPLAY_CHIME: "টিভিতে একবার \"শব্দ চালু করুন\" চাপতে হয় (ব্রাউজারের নিয়ম)।",
       DISPLAY_ANNOUNCE: "রেকর্ড করা অডিও থাকলে সেটি, না থাকলে ডিভাইসের বাংলা ভয়েস ব্যবহার হয়।",
       DISPLAY_CONTROLS: "টিভির নিচে বোতাম দেখাবে।",
       CONSOLE_UNDO: "\"পরের রোগী\", \"দেখা শেষ\", \"উপস্থিত নেই\" ইত্যাদির পর ৫ সেকেন্ড। অডিট লগে থাকে।",
       CONSOLE_LOOKUP: "শুধু এই প্রতিষ্ঠানের আগের সিরিয়াল থেকে খোঁজে।",
       CONSOLE_PWA: "অ্যাসিস্ট্যান্টের ফোনে \"হোম স্ক্রিনে যোগ করুন\" বোতাম দেখাবে।",
+      DOCTOR_BREAK_TIMER: "বিরতির ধরন ও মিনিট বাছাই; রোগীর পেজ ও টিভিতে ফেরার সময় দেখায়, অপেক্ষার হিসাবে বিরতির সময় যোগ হয়।",
+      SMS_COST_PREVIEW: "দেরির SMS ও রোগী যোগ করার সময় কত ভাগে যাবে দেখায়; অ্যাডমিনের \"SMS খরচ\" পাতায় প্রতিটি বার্তার হিসাব।",
     },
   },
 
@@ -250,6 +267,33 @@ export const bnDict = {
     total: "মোট",
     note: "শুধু সফলভাবে পাঠানো SMS-এর অংশ বিলযোগ্য। একটি বাংলা SMS ৭০ অক্ষরের বেশি হলে একাধিক অংশে যায়।",
     empty: "কোনো প্রতিষ্ঠান নেই।",
+    limit: "মাসিক সীমা",
+    noLimit: "সীমা নেই",
+  },
+
+  smsCost: {
+    title: "SMS খরচ",
+    intro: "রোগীরা যে SMS পান, তার প্রতিটি কত ভাগে যায়, এখানে দেখুন। বিল হয় ভাগ গুনে: বাংলা SMS-এ এক ভাগে ৭০ অক্ষর (বড় হলে প্রতি ভাগে ৬৭)।",
+    thisMonth: "এই মাসে আপনার প্রতিষ্ঠান",
+    segments: "বিলযোগ্য ভাগ",
+    sent: "পাঠানো SMS",
+    failed: "ব্যর্থ",
+    perDoctor: "ডাক্তার অনুযায়ী বার্তা",
+    sampleNote: "উদাহরণে ৩ অঙ্কের সিরিয়াল ও আসল লিংকের দৈর্ঘ্য ধরা হয়েছে।",
+    templates: {
+      TOKEN_CREATED: "সিরিয়াল দেওয়ার পর",
+      LEAVE_NOW: "\"এখন রওনা দিন\"",
+      NEXT_UP: "\"আপনি পরের জন\"",
+      DELAY_BROADCAST: "দেরির SMS",
+    },
+    chars: (n: string) => `${n} অক্ষর`,
+    parts: (n: string) => `${n} ভাগ`,
+    line: (chars: string, parts: string) => `${chars} অক্ষর · ${parts} ভাগে যাবে`,
+    over: "৭০ অক্ষরের বেশি — একাধিক ভাগে যাবে, খরচ বেশি।",
+    tipName: "ডাক্তারের নাম ছোট করলে (যেমন \"ডা. করিম\") অনেক সময় ১ ভাগে নেমে আসে।",
+    tipDomain: "ছোট ডোমেইন ব্যবহার করলেও লিংক ছোট হয়।",
+    addLabel: "এই রোগী সিরিয়ালের যে SMS পাবেন:",
+    noDoctors: "এখনো কোনো ডাক্তার নেই।",
   },
 
   audit: {
@@ -260,6 +304,7 @@ export const bnDict = {
     reason: "কারণ",
     jumped: "যাদের আগে ডাকা হলো",
     auto: "স্বয়ংক্রিয়",
+    patient: "রোগী নিজে",
     actions: {
       TOKEN_ADDED: "সিরিয়াল যোগ",
       TOKEN_EDITED: "তথ্য বদল",
@@ -275,7 +320,8 @@ export const bnDict = {
       SESSION_STATUS_CHANGED: "সেশনের অবস্থা বদল",
       DELAY_SET: "দেরির ঘোষণা",
       DELAY_BROADCAST: "দেরির SMS",
-    UNDO: "পূর্বাবস্থায় ফেরানো",
+      UNDO: "পূর্বাবস্থায় ফেরানো",
+      PATIENT_NOT_COMING: "রোগী জানালেন আসছেন না",
     },
   },
 
@@ -393,6 +439,20 @@ export const bnDict = {
     line: (n: string) => `লাইন ${n}`,
     addedMany: (n: string) => `${n} জন যোগ হয়েছে`,
 
+    // Timed break
+    breakTitle: "বিরতি কতক্ষণ?",
+    breakKind: "কিসের বিরতি?",
+    breakKinds: { PRAYER: "নামাজ", BREAK: "বিরতি" },
+    breakMinutes: "কত মিনিট?",
+    breakStart: (kind: string, m: string) => `${kind} শুরু — ${m} মিনিট`,
+    breakNoTimer: "সময় ছাড়া বিরতি",
+    breakUntil: (kind: string, time: string, left: string) => `${kind}: ফিরবেন ~${time} (আর ${left} মিনিট)`,
+    breakOverdue: (kind: string, time: string) => `${kind}: ${time}-এ ফেরার কথা ছিল`,
+
+    // Patient said "not coming"
+    notComing: "আসছেন না",
+    notComingNotice: (serials: string) => `সিরিয়াল ${serials}: রোগী জানিয়েছেন আসছেন না — লাইন থেকে সরানো হয়েছে।`,
+
     // Undo
     undo: "পূর্বাবস্থায় ফেরান",
     undoAfter: (label: string) => `হয়েছে: ${label}`,
@@ -468,6 +528,18 @@ export const bnDict = {
     ended: "আজকের সেশন শেষ হয়েছে",
     sessionCancelled: "আজকের সেশন বাতিল হয়েছে",
     keepOpen: "পাতাটি খোলা রাখলে নিজে থেকেই আপডেট হবে।",
+    breakWhere: { PRAYER: "নামাজে", BREAK: "বিরতিতে" },
+    breakTimed: (where: string, time: string, left: string) =>
+      `ডাক্তার ${where} আছেন — আনুমানিক ${time}-এ ফিরবেন (আর ${left} মিনিট)`,
+    breakOverdue: (where: string) => `ডাক্তার ${where} আছেন — যেকোনো সময় ফিরবেন`,
+    etaIncludesBreak: "বিরতির বাকি সময় হিসাবে যোগ করা আছে।",
+    notComing: "আমি আসছি না",
+    notComingAsk: "সত্যিই আসছেন না? আপনার সিরিয়াল বাতিল হবে, আর পরের রোগীরা এগিয়ে যাবেন।",
+    notComingYes: "হ্যাঁ, আসছি না",
+    notComingNo: "না, আসছি",
+    notComingSending: "জানানো হচ্ছে…",
+    notComingFailed: "জানানো গেল না। ইন্টারনেট দেখে আবার চেষ্টা করুন।",
+    notComingDone: "আপনি জানিয়েছেন আসছেন না — ধন্যবাদ। মত বদলালে চেম্বারে সহকারীকে বলুন, তিনি আবার লাইনে দিতে পারবেন।",
     progressLabel: "লাইন কতটা এগোল",
     progressDetail: (done: string, ahead: string) => `দেখা শেষ ${done} জন · আপনার আগে ${ahead} জন`,
     getReady: "প্রস্তুত থাকুন",

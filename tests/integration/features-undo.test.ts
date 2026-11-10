@@ -194,6 +194,7 @@ describe("feature flags in the live views", () => {
       PATIENT_PROGRESS: true,
       PATIENT_ALERT: false,
       PATIENT_UPDATED_AGO: false,
+      PATIENT_NOT_COMING: false,
     });
     expect(projectDisplay(d).features.DISPLAY_CHIME).toBe(true);
     expect(projectConsole(d).features.CONSOLE_UNDO).toBe(false); // doctor override

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireUser } from "@/lib/access";
 import { prisma } from "@/lib/db";
-import { normalizeBdPhone } from "@/lib/format";
+import { normalizeBdPhone, toAsciiDigits } from "@/lib/format";
 import { t } from "@/lib/i18n/bn";
 import { fail, isUniqueViolation, parseForm, type ActionResult } from "@/lib/action-result";
 import { createUserWithPassword } from "@/lib/users";
@@ -103,4 +103,22 @@ export async function saveDoctorFeatures(_: ActionResult | null, fd: FormData): 
   await prisma.doctor.update({ where: { id: doctor.id }, data: { features: doctorOverridesFromForm(fd) } });
   revalidatePath(`/super/orgs/${orgId}`);
   return { ok: true, message: t.features.saved };
+}
+
+/** Monthly SMS allowance in billable segments (empty = no limit). Warning only; sending is never blocked. */
+export async function saveSmsLimit(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  await requireUser(["SUPER_ADMIN"]);
+  const orgId = String(fd.get("orgId") ?? "");
+  const raw = String(fd.get("smsMonthlyLimit") ?? "").trim();
+  const value = raw === "" ? null : Number(toAsciiDigits(raw));
+  if (value !== null && (!Number.isInteger(value) || value < 1 || value > 10_000_000)) {
+    return fail("", fd, { smsMonthlyLimit: t.validation.number });
+  }
+  const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { id: true } });
+  if (!org) return fail(t.common.notFound);
+  await prisma.organization.update({ where: { id: org.id }, data: { smsMonthlyLimit: value } });
+  revalidatePath(`/super/orgs/${org.id}`);
+  revalidatePath("/super");
+  revalidatePath("/super/sms");
+  return { ok: true, message: t.features.smsLimitSaved };
 }

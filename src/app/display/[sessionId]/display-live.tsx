@@ -8,6 +8,7 @@ import { bn, formatTime } from "@/lib/format";
 import { t } from "@/lib/i18n/bn";
 import type { DisplayView } from "@/lib/snapshot";
 import { playChime, unlockAudio } from "@/lib/sound";
+import { useBreak } from "@/lib/use-break";
 import { useLive } from "@/lib/use-live";
 
 const d = t.display;
@@ -26,6 +27,7 @@ export function DisplayLive({ sessionId, initial }: { sessionId: string; initial
   const [soundOn, setSoundOn] = useState(false);
   const big = useBigMode(f.DISPLAY_CONTROLS);
   const fullscreen = useFullscreen();
+  const timedBreak = useBreak(data.breakEndsAt, data.serverTime);
 
   // A newly called serial replays the pop animation (keyed by callCount)…
   const [callCount, setCallCount] = useState(0);
@@ -55,7 +57,11 @@ export function DisplayLive({ sessionId, initial }: { sessionId: string; initial
       : data.status === "ENDED"
         ? t.patient.ended
         : data.status === "ON_BREAK"
-          ? t.patient.onBreak
+          ? timedBreak && data.breakKind
+            ? timedBreak.overdue
+              ? t.patient.breakOverdue(t.patient.breakWhere[data.breakKind])
+              : t.patient.breakTimed(t.patient.breakWhere[data.breakKind], timedBreak.time, timedBreak.left)
+            : t.patient.onBreak
           : data.status === "NOT_STARTED"
             ? `${t.patient.doctorNotArrived} · ${t.patient.scheduledAt(formatTime(new Date(data.scheduledStartAt)))}`
             : null;

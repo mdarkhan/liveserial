@@ -13,6 +13,7 @@ Read [docs/BRIEF.md](docs/BRIEF.md) (requirements) and [docs/PLAN.md](docs/PLAN.
 | 4 — ETA and SMS | **Approved** (2026-11-10) | See "Phase 4" below. |
 | 5 — Admin and deploy | **Done, awaiting owner review** (2026-11-10) | See "Phase 5" below. Deployed to FlyNode 2026-11-10 (see "Deployment"). |
 | 6 — Optional UX features | **Done, awaiting owner review** (2026-11-10) | See "Phase 6" below. Not deployed yet. |
+| 7 — Break timer, not coming, SMS cost/limit | **Done, awaiting owner review** (2026-11-10) | See "Phase 7" below. Not deployed yet. |
 
 ## How to run (local)
 
@@ -311,6 +312,79 @@ The owner asked for nine improvements, each switched on or off by the super admi
 5. **Patient alert:** sound needs a tap (browser rule), so it is an explicit button, and it lasts while the page is open. "Ready" at ≤ 3 ahead; the sound plays at ≤ 2 and when called.
 6. **Announcements:** recorded audio is preferred, because Bangla text-to-speech is missing on many TVs. Until the clinic adds recordings, devices with a Bangla voice speak; others only chime.
 7. **Install on home screen** is a web app manifest only, with no service worker or offline cache (not a native app; BRIEF scope).
+
+## Phase 7 — break timer, "not coming", SMS cost and limit (owner request, 2026-11-10)
+
+Three new switches go on the super admin's feature page, and there is a monthly SMS limit per organization.
+
+- **Timed doctor break** (`DOCTOR_BREAK_TIMER`; doctor-level override possible):
+  - "বিরতি" in the console opens a sheet: kind ("নামাজ" / "বিরতি") and length (৫–৬০ minutes), or "সময় ছাড়া বিরতি".
+  - Stored as `Session.breakKind` + `breakEndsAt`; cleared on resume or end.
+  - The patient page and TV show "ডাক্তার নামাজে আছেন — আনুমানিক রাত ১১:৫৮-এ ফিরবেন (আর ১৪ মিনিট)". When the time has passed: "যেকোনো সময় ফিরবেন".
+  - The console shows the same line, in red when overdue.
+  - The ETA adds the remaining break minutes and says so.
+  - The server refuses a timed break where the switch is off.
+- **"আমি আসছি না"** (`PATIENT_NOT_COMING`; doctor-level):
+  - On the patient link, a waiting or skipped patient confirms once. The serial then becomes CANCELLED with `Token.cancelledByPatientAt`, and the people behind move up.
+  - Server: `patientNotComing` in `queue-service.ts`, via `POST /api/live/t/[code]`.
+    - Idempotent by request id.
+    - Logged as `PATIENT_NOT_COMING`, with "রোগী নিজে" as the actor in the audit log.
+  - The console instantly shows "সিরিয়াল ১৪: রোগী জানিয়েছেন আসছেন না…" (plus vibration). The patient appears under "লাইনে নেই" with an "আসছেন না" badge, and the assistant can put them back in line (after current / at end).
+- **SMS cost preview** (`SMS_COST_PREVIEW`; organization-only):
+  - **Console:** "৭৬ অক্ষর · ২ ভাগে যাবে" under the phone field when adding a patient, and under the delay-broadcast preview. Highlighted when more than 1 part.
+  - **New admin page `/admin/sms` ("SMS খরচ" tab, only when on):**
+    - this month's billable parts, sent and failed;
+    - per doctor, each automatic message rendered with the real link length and a 3-digit serial, with characters and parts;
+    - tips when a message needs 2+ parts.
+- **SMS monthly limit** (super admin, `Organization.smsMonthlyLimit`, in billable parts; empty = no limit):
+  - Set on `/super/orgs/[id]`, which also shows this month's use so far.
+  - **Warnings:**
+    - `/super` shows a "SMS সীমা সতর্কতা" box plus a badge per organization;
+    - `/super/sms` shows "used / limit" per organization, a highlighted row, and the badge.
+  - "সীমার কাছে" from 80%; "সীমা ছাড়িয়েছে" above 100%.
+  - Warning only: sending is never blocked.
+- **Migration** (new): `20261110170000_break_not_coming_sms_limit`.
+- **Test fix:** the SMS-usage integration test now waits for the background outbox before changing message statuses. This race existed before and showed up once under load.
+
+### Verified
+- tsc clean, ESLint clean.
+- Vitest 154/154, three runs in a row (14 new). They cover:
+  - **Timed break:** stored and shown to patient and TV, ETA +break, resume clears, plain break, bad input refused, not shown after end.
+  - **Not coming:**
+    - waiting and skipped patients;
+    - logged with no staff actor, and the others move up;
+    - idempotent;
+    - refused once called, for an unknown code, or after the session ends;
+    - staff can re-queue it, but not a staff cancellation.
+  - **SMS limit:** none / OK / near / over, against real sent parts.
+  - **Views:** break only while on break; "not coming" listed with the away patients.
+- E2E 5/5 (production build).
+- Click-through at 360px (dev DB; temporary super admin and the test limit removed afterwards):
+  - **Super admin:**
+    - all 12 switches turned on;
+    - a limit typed in Bangla digits ("৫") was saved;
+    - `/super` showed the warning box "সেবা ক্লিনিক… ৪৬ / ৫ ভাগ — সীমা ছাড়িয়েছে";
+    - `/super/sms` showed the red row.
+  - **Clinic admin `/admin/sms`:** this month 46 parts / 23 SMS. Every automatic message for both doctors is 72–97 characters → 2 parts (see the note below).
+  - **Console break:** the sheet opened; "নামাজ, ১৫" set it, and the console showed "নামাজ: ফিরবেন ~রাত ১১:৫৮ (আর ১৫ মিনিট)".
+  - **Patient page during the break:** the banner showed the same time, the ETA was "৩০–৪৫ মিনিট" (3 × 6 + 15) with "বিরতির বাকি সময় হিসাবে যোগ করা আছে", and the countdown went 15 → 14. The TV showed the same.
+  - **"আমি আসছি না":**
+    - the confirmation appeared, then the patient saw "আপনি জানিয়েছেন আসছেন না";
+    - the console showed the notice and an "আসছেন না" badge;
+    - "এখনকার রোগীর পরে" put the patient back as next, and the patient page went back to "প্রস্তুত থাকুন · আপনার আগে ১ জন".
+  - **SMS cost** lines in the add form and the broadcast sheet. Fixed: the add-form line had no label saying which SMS it was about.
+  - No horizontal scroll on any page.
+- **Not verified:** on a real phone, or with a real SMS gateway.
+
+## Decisions (Phase 7)
+
+1. **Break timer** is optional per doctor. Without it, "বিরতি" works as before (no time). Calling a patient during a break still works (the session becomes RUNNING). The timer then stops showing, and if that call is undone, the break with its timer comes back.
+2. **"Not coming" is a cancellation by the patient**, not a new status. It reuses CANCELLED, plus a timestamp that marks it as the patient's, so reports, counts and the "one serving" rule are unchanged. Only staff can undo it, by re-queueing. The patient can't, so a mis-tap needs a word with the assistant; the confirmation step guards against that.
+3. **Allowed from waiting or skipped only.** Once called, the assistant handles it ("উপস্থিত নেই").
+4. **SMS limit counts billable parts of SENT messages** in the Dhaka month (same as billing). Near = 80%. It never blocks sending: a clinic's patients must still get their messages.
+5. **SMS cost preview is organization-only:** the admin page is per clinic, and the console lines show for all its doctors.
+
+**Finding for the owner:** with the current templates, every automatic SMS (serial, "রওনা দিন", "পরের জন", delay) is over 70 characters, so each costs 2 parts. The live address (`nt2dfm9rvn96knb7lgaurxm6.flynode.io`) is even longer than the dev one. A short custom domain (Q8) and/or shorter template wording would roughly halve SMS cost. Not changed: wording and domain are the owner's call.
 
 ## Known issues / notes
 

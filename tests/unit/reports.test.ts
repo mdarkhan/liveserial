@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { dhakaMonthRange, lateMinutes, summarizeDay, summarizeSession, waitMinutes, type ReportToken } from "@/lib/reports";
+import {
+  dhakaMonthRange,
+  lateMinutes,
+  smsLimitStatus,
+  summarizeDay,
+  summarizeSession,
+  waitMinutes,
+  type ReportToken,
+} from "@/lib/reports";
 
 const start = new Date("2026-11-10T11:00:00Z"); // 17:00 Dhaka
 const at = (min: number) => new Date(start.getTime() + min * 60_000);
@@ -71,5 +79,16 @@ describe("dhakaMonthRange", () => {
     });
     expect(dhakaMonthRange("2026-12").to).toEqual(new Date("2026-12-31T18:00:00Z"));
     expect(() => dhakaMonthRange("2026-13")).toThrow();
+  });
+});
+
+describe("smsLimitStatus", () => {
+  it("no limit → NONE; under 80% OK; from 80% NEAR; above the limit OVER", () => {
+    expect(smsLimitStatus(5000, null)).toBe("NONE");
+    expect(smsLimitStatus(5, 0)).toBe("NONE");
+    expect(smsLimitStatus(79, 100)).toBe("OK");
+    expect(smsLimitStatus(80, 100)).toBe("NEAR");
+    expect(smsLimitStatus(100, 100)).toBe("NEAR");
+    expect(smsLimitStatus(101, 100)).toBe("OVER");
   });
 });

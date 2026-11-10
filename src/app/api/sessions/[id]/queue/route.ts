@@ -41,7 +41,13 @@ const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("REQUEUE"), tokenId: id, mode: z.enum(["AFTER_CURRENT", "AT_END"]) }),
   z.object({ type: z.literal("CANCEL"), tokenId: id }),
   z.object({ type: z.literal("UNDO"), undoOf: z.string().uuid() }),
-  z.object({ type: z.literal("DOCTOR"), action: z.enum(["ARRIVED", "BREAK", "RESUME", "END"]) }),
+  z.object({
+    type: z.literal("DOCTOR"),
+    action: z.enum(["ARRIVED", "BREAK", "RESUME", "END"]),
+    /** Timed break ("নামাজ, ১৫ মিনিট"), only with BREAK and only where DOCTOR_BREAK_TIMER is on. */
+    breakMinutes: z.number().int().min(1).max(180).optional(),
+    breakKind: z.enum(["PRAYER", "BREAK"]).optional(),
+  }),
   z.object({ type: z.literal("DELAY"), minutes: z.number().int().min(0).max(300) }),
   z.object({ type: z.literal("BROADCAST"), minutes: z.number().int().min(5).max(300) }),
   z.object({
@@ -128,9 +134,19 @@ export async function POST(req: Request, { params }: RouteContext<"/api/sessions
         result = await undoAction(ctx, body.undoOf);
         break;
       }
-      case "DOCTOR":
-        result = await setDoctorStatus(ctx, body.action);
+      case "DOCTOR": {
+        let timedBreak: { minutes: number; kind: "PRAYER" | "BREAK" } | null = null;
+        if (body.breakMinutes !== undefined) {
+          const data = await loadSessionData(sessionId);
+          if (!data || data.organizationId !== auth.orgId || !data.features.DOCTOR_BREAK_TIMER) {
+            return Response.json({ ok: false, code: "FORBIDDEN" }, { status: 403 });
+          }
+          if (body.action !== "BREAK") return Response.json({ ok: false, code: "BAD_REQUEST" }, { status: 400 });
+          timedBreak = { minutes: body.breakMinutes, kind: body.breakKind ?? "BREAK" };
+        }
+        result = await setDoctorStatus(ctx, body.action, timedBreak);
         break;
+      }
       case "DELAY":
         result = await setDelay(ctx, body.minutes);
         break;

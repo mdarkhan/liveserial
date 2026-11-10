@@ -27,6 +27,8 @@ export type EtaInput = {
   doctorMedianConsultMinutes: number | null;
   /** Doctor's median arrival delay (minutes, may be negative) over their last 30 sessions, if known. */
   doctorMedianArrivalDelayMinutes: number | null;
+  /** On a timed break: minutes until the doctor is expected back (added to the wait). */
+  breakRemainingMinutes?: number | null;
 };
 
 export type MinutesSource = "SESSION" | "DOCTOR_HISTORY" | "DEFAULT";
@@ -78,16 +80,18 @@ export function computeEta(input: EtaInput): Eta {
   const mpc = minutesPerConsult(input.sessionConsultMinutes, input.doctorMedianConsultMinutes);
   const ahead = Math.max(0, input.peopleAhead);
   const consultMinutes = ahead * mpc.minutes;
+  const breakMinutes = Math.max(0, input.breakRemainingMinutes ?? 0);
 
   if (input.doctorArrivedAt) {
+    const minutes = consultMinutes + breakMinutes;
     return {
       minutesPerConsult: mpc.minutes,
       minutesSource: mpc.source,
       doctorArrived: true,
       expectedStartAt: null,
       delaySource: null,
-      minutes: consultMinutes,
-      ...etaRange(consultMinutes),
+      minutes,
+      ...etaRange(minutes),
     };
   }
 

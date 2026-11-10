@@ -18,8 +18,13 @@ import { patientLink, renderSms, smsSegments } from "@/lib/sms-text";
 import type { ConsoleToken, ConsoleView } from "@/lib/snapshot";
 import { sessionTone, tokenTone } from "@/lib/status";
 import { useLive, type LiveMode } from "@/lib/use-live";
+import { useBreak } from "@/lib/use-break";
+import { SmsCost } from "@/components/sms-cost";
 
 const c = t.console;
+
+type BreakKind = "PRAYER" | "BREAK";
+const BREAK_MINUTES = [5, 10, 15, 20, 30, 45, 60];
 
 // ───────────── Action outbox ─────────────
 
@@ -34,7 +39,7 @@ type ActionBody =
     }
   | { type: "IN_CONSULT" | "DONE" | "SKIP" | "NO_SHOW" | "CANCEL"; tokenId: string }
   | { type: "REQUEUE"; tokenId: string; mode: "AFTER_CURRENT" | "AT_END" }
-  | { type: "DOCTOR"; action: DoctorStatusAction }
+  | { type: "DOCTOR"; action: DoctorStatusAction; breakMinutes?: number; breakKind?: BreakKind }
   | { type: "DELAY"; minutes: number }
   | { type: "BROADCAST"; minutes: number }
   | { type: "UNDO"; undoOf: string }
@@ -254,6 +259,29 @@ export function ConsoleClient({
   const [sheetToken, setSheetToken] = useState<ConsoleToken | null>(null);
   const [outOfOrder, setOutOfOrder] = useState<{ token: ConsoleToken; jumped: number[] } | null>(null);
   const [delayOpen, setDelayOpen] = useState(false);
+  const [breakOpen, setBreakOpen] = useState(false);
+
+  // A patient said "not coming" on their link: tell the assistant right away.
+  const notComingIds = view.away.filter((a) => a.notComing).map((a) => a.id);
+  const notComingKey = notComingIds.join(",");
+  const [seenNotComing, setSeenNotComing] = useState(notComingKey);
+  if (notComingKey !== seenNotComing) {
+    const seen = new Set(seenNotComing.split(","));
+    const fresh = view.away.filter((a) => a.notComing && !seen.has(a.id));
+    setSeenNotComing(notComingKey);
+    if (fresh.length > 0) {
+      setNotice({ tone: "warning", text: c.notComingNotice(fresh.map((a) => bn(a.serial)).join(", ")) });
+    }
+  }
+  const notComingCount = notComingIds.length;
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    if (notComingCount > 0) navigator.vibrate?.([120, 80, 120]);
+  }, [notComingCount]);
   const [endOpen, setEndOpen] = useState(false);
   const [broadcastOpen, setBroadcastOpen] = useState(false);
 
@@ -326,7 +354,7 @@ export function ConsoleClient({
         </div>
 
         {/* ───── doctor status ───── */}
-        {(doctorButtons.length > 0 || s.announcedDelayMinutes) && (
+        {(doctorButtons.length > 0 || s.announcedDelayMinutes || s.breakEndsAt) && (
           <section aria-label={t.common.status} className="flex flex-wrap gap-2">
             {doctorButtons.includes("ARRIVED") && (
               <button
@@ -347,7 +375,11 @@ export function ConsoleClient({
             {doctorButtons.includes("BREAK") && (
               <button
                 className={buttonClass("secondary")}
-                onClick={() => act({ type: "DOCTOR", action: "BREAK" }, c.doctorBreak)}
+                onClick={() =>
+                  view.features.DOCTOR_BREAK_TIMER
+                    ? setBreakOpen(true)
+                    : act({ type: "DOCTOR", action: "BREAK" }, c.doctorBreak)
+                }
               >
                 {c.doctorBreak}
               </button>
@@ -370,6 +402,9 @@ export function ConsoleClient({
             {s.announcedDelayMinutes ? (
               <p className="w-full font-medium text-warning-ink">{c.delayNow(bn(s.announcedDelayMinutes))}</p>
             ) : null}
+            {s.status === "ON_BREAK" && s.breakEndsAt && s.breakKind && (
+              <BreakLine kind={s.breakKind} endsAt={s.breakEndsAt} serverTime={view.serverTime} />
+            )}
           </section>
         )}
 
@@ -463,6 +498,17 @@ export function ConsoleClient({
           <AddPatients
             onAdd={(patients, label) => act({ type: "ADD", patients }, label)}
             lookup={view.features.CONSOLE_LOOKUP ? lookup : undefined}
+            smsPreview={
+              view.features.SMS_COST_PREVIEW
+                ? () =>
+                    // Public codes are always 10 characters, so this matches the real message's length.
+                    renderSms("TOKEN_CREATED", {
+                      serial: view.total + 1,
+                      doctorName: s.doctorName,
+                      link: patientLink(smsBaseUrl, "x".repeat(10)),
+                    })
+                : undefined
+            }
           />
         )}
       </main>
@@ -560,6 +606,11 @@ export function ConsoleClient({
               </div>
             ) : (
               <div className="grid gap-2">
+                {sheetToken.notComing && (
+                  <p className="rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 font-medium text-warning-ink">
+                    {c.notComingNotice(bn(sheetToken.serial))}
+                  </p>
+                )}
                 <p className="font-semibold">{c.requeueTitle}</p>
                 <button
                   className={buttonClass("primary", "lg")}
@@ -579,12 +630,14 @@ export function ConsoleClient({
                 >
                   {c.requeueEnd}
                 </button>
-                <CancelTokenButton
-                  onConfirm={() => {
-                    act({ type: "CANCEL", tokenId: sheetToken.id }, c.cancelToken);
-                    setSheetToken(null);
-                  }}
-                />
+                {!sheetToken.notComing && (
+                  <CancelTokenButton
+                    onConfirm={() => {
+                      act({ type: "CANCEL", tokenId: sheetToken.id }, c.cancelToken);
+                      setSheetToken(null);
+                    }}
+                  />
+                )}
               </div>
             )}
           </div>
@@ -609,6 +662,22 @@ export function ConsoleClient({
           setOutOfOrder(null);
         }}
       />
+
+      <Sheet open={breakOpen} onClose={() => setBreakOpen(false)} title={c.breakTitle}>
+        {breakOpen && (
+          <BreakForm
+            onPick={(minutes, kind) => {
+              setBreakOpen(false);
+              if (minutes === null) act({ type: "DOCTOR", action: "BREAK" }, c.doctorBreak);
+              else
+                act(
+                  { type: "DOCTOR", action: "BREAK", breakMinutes: minutes, breakKind: kind },
+                  c.breakStart(c.breakKinds[kind], bn(minutes)),
+                );
+            }}
+          />
+        )}
+      </Sheet>
 
       <Sheet open={delayOpen} onClose={() => setDelayOpen(false)} title={c.delayTitle}>
         <div className="grid grid-cols-3 gap-2">
@@ -642,6 +711,7 @@ export function ConsoleClient({
             view={view}
             baseUrl={smsBaseUrl}
             initialMinutes={s.announcedDelayMinutes ?? 30}
+            showCost={view.features.SMS_COST_PREVIEW}
             onCancel={() => setBroadcastOpen(false)}
             onSend={(minutes) => {
               act({ type: "BROADCAST", minutes }, c.broadcast);
@@ -739,7 +809,11 @@ function TokenList({ tokens, onPick }: { tokens: ConsoleToken[]; onPick?: (t: Co
               <span className="block truncate text-lg">{tk.name}</span>
               {(tk.isEmergency || tk.status !== "WAITING") && (
                 <span className="mt-0.5 flex flex-wrap gap-1">
-                  {tk.status !== "WAITING" && <Badge tone={tokenTone(tk.status)}>{t.tokenStatus[tk.status]}</Badge>}
+                  {tk.notComing ? (
+                    <Badge tone="warning">{c.notComing}</Badge>
+                  ) : (
+                    tk.status !== "WAITING" && <Badge tone={tokenTone(tk.status)}>{t.tokenStatus[tk.status]}</Badge>
+                  )}
                   {tk.isEmergency && <Badge tone="danger">{t.token.emergency}</Badge>}
                 </span>
               )}
@@ -952,6 +1026,7 @@ function OutOfOrderForm({
 function AddPatients({
   onAdd,
   lookup,
+  smsPreview,
 }: {
   onAdd: (
     patients: Array<{ name: string; phone?: string | null; serial?: number; isEmergency?: boolean }>,
@@ -959,6 +1034,8 @@ function AddPatients({
   ) => void;
   /** Returning patient: name on the latest serial with this phone (only when switched on). */
   lookup?: (phone: string) => Promise<string | null>;
+  /** SMS cost preview: the creation SMS this patient would get (only when switched on). */
+  smsPreview?: (phone: string) => string;
 }) {
   const [mode, setMode] = useState<"quick" | "bulk">("quick");
   const [name, setName] = useState("");
@@ -1050,6 +1127,9 @@ function AddPatients({
                 >
                   {phoneError ? t.validation.phone : t.token.phoneOptional}
                 </span>
+                {smsPreview && phoneNorm && (
+              <SmsCost text={smsPreview(phoneNorm)} label={t.smsCost.addLabel} className="mt-2" />
+            )}
                 {match && (
                   <span
                     role="status"
@@ -1130,6 +1210,9 @@ function AddPatients({
                 >
                   {phoneError ? t.validation.phone : t.token.phoneOptional}
                 </span>
+                {smsPreview && phoneNorm && (
+              <SmsCost text={smsPreview(phoneNorm)} label={t.smsCost.addLabel} className="mt-2" />
+            )}
                 {match && (
                   <span
                     role="status"
@@ -1239,12 +1322,14 @@ function BroadcastForm({
   view,
   baseUrl,
   initialMinutes,
+  showCost,
   onCancel,
   onSend,
 }: {
   view: ConsoleView;
   baseUrl: string;
   initialMinutes: number;
+  showCost?: boolean;
   onCancel: () => void;
   onSend: (minutes: number) => void;
 }) {
@@ -1289,6 +1374,7 @@ function BroadcastForm({
           <div>
             <p className="mb-1 text-sm font-semibold text-ink-muted">{c.broadcastPreview}</p>
             <p className="rounded-lg border border-line bg-canvas px-3 py-2 break-words">{bodies[0]}</p>
+            {showCost && <SmsCost text={bodies.reduce((a, b) => (b.length > a.length ? b : a), bodies[0])} className="mt-2" />}
           </div>
           <p className="rounded-lg border border-primary/30 bg-primary-soft px-3 py-2 font-semibold text-primary">
             {c.broadcastCounts(bn(recipients.length), bn(perSms), bn(total))}
@@ -1308,6 +1394,61 @@ function BroadcastForm({
           {c.broadcastSend(bn(recipients.length))}
         </button>
       </div>
+    </div>
+  );
+}
+
+/** "নামাজ: ফিরবেন ~৮:১৫ (আর ১২ মিনিট)" while a timed break runs. */
+function BreakLine({ kind, endsAt, serverTime }: { kind: BreakKind; endsAt: string; serverTime: string }) {
+  const b = useBreak(endsAt, serverTime);
+  if (!b) return null;
+  return (
+    <p className={cx("w-full font-semibold", b.overdue ? "text-danger" : "text-warning-ink")} role="status">
+      {b.overdue ? c.breakOverdue(c.breakKinds[kind], b.time) : c.breakUntil(c.breakKinds[kind], b.time, b.left)}
+    </p>
+  );
+}
+
+/** Pick the kind (prayer / break) and length; or a break without a timer. */
+function BreakForm({ onPick }: { onPick: (minutes: number | null, kind: BreakKind) => void }) {
+  const [kind, setKind] = useState<BreakKind>("PRAYER");
+  return (
+    <div className="space-y-4">
+      <fieldset>
+        <legend className="mb-2 font-semibold">{c.breakKind}</legend>
+        <div className="grid grid-cols-2 gap-2">
+          {(["PRAYER", "BREAK"] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              aria-pressed={kind === k}
+              onClick={() => setKind(k)}
+              className={buttonClass(kind === k ? "primary" : "secondary", "lg")}
+            >
+              {c.breakKinds[k]}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend className="mb-2 font-semibold">{c.breakMinutes}</legend>
+        <div className="grid grid-cols-4 gap-2">
+          {BREAK_MINUTES.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => onPick(m, kind)}
+              className={buttonClass("secondary", "md", "px-1")}
+              aria-label={c.breakStart(c.breakKinds[kind], bn(m))}
+            >
+              {bn(m)}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+      <button type="button" className={buttonClass("ghost", "md", "w-full")} onClick={() => onPick(null, kind)}>
+        {c.breakNoTimer}
+      </button>
     </div>
   );
 }

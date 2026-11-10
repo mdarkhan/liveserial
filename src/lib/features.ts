@@ -12,6 +12,7 @@ export const FEATURES = [
   "PATIENT_PROGRESS",
   "PATIENT_ALERT",
   "PATIENT_UPDATED_AGO",
+  "PATIENT_NOT_COMING",
   // Waiting-room TV (/display/…)
   "DISPLAY_CHIME",
   "DISPLAY_ANNOUNCE",
@@ -20,20 +21,22 @@ export const FEATURES = [
   "CONSOLE_UNDO",
   "CONSOLE_LOOKUP",
   "CONSOLE_PWA",
+  "DOCTOR_BREAK_TIMER",
+  "SMS_COST_PREVIEW",
 ] as const;
 
 export type Feature = (typeof FEATURES)[number];
 export type FeatureFlags = Record<Feature, boolean>;
 export type FeatureOverrides = Partial<Record<Feature, boolean>>;
 
-/** Organization-wide only: installing the console isn't about one doctor. */
-export const ORG_ONLY: readonly Feature[] = ["CONSOLE_PWA"];
+/** Organization-wide only: installing the console and the SMS cost screens aren't about one doctor. */
+export const ORG_ONLY: readonly Feature[] = ["CONSOLE_PWA", "SMS_COST_PREVIEW"];
 export const DOCTOR_FEATURES: readonly Feature[] = FEATURES.filter((f) => !ORG_ONLY.includes(f));
 
 export const FEATURE_GROUPS: ReadonlyArray<{ key: "patient" | "display" | "console"; features: readonly Feature[] }> = [
-  { key: "patient", features: ["PATIENT_PROGRESS", "PATIENT_ALERT", "PATIENT_UPDATED_AGO"] },
+  { key: "patient", features: ["PATIENT_PROGRESS", "PATIENT_ALERT", "PATIENT_UPDATED_AGO", "PATIENT_NOT_COMING"] },
   { key: "display", features: ["DISPLAY_CHIME", "DISPLAY_ANNOUNCE", "DISPLAY_CONTROLS"] },
-  { key: "console", features: ["CONSOLE_UNDO", "CONSOLE_LOOKUP", "CONSOLE_PWA"] },
+  { key: "console", features: ["CONSOLE_UNDO", "CONSOLE_LOOKUP", "CONSOLE_PWA", "DOCTOR_BREAK_TIMER", "SMS_COST_PREVIEW"] },
 ];
 
 export function isFeature(k: string): k is Feature {

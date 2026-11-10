@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
-import { ActionForm, SubmitButton } from "@/components/form";
+import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { Badge, buttonClass, Card, EmptyState, PageHeader } from "@/components/ui";
 import { requireUser } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { DOCTOR_FEATURES, FEATURE_GROUPS, FEATURES, ORG_ONLY, parseOverrides, resolveFeatures } from "@/lib/features";
-import { bn } from "@/lib/format";
+import { bn, dhakaDateString } from "@/lib/format";
+import { getOrgSmsMonth } from "@/lib/reports";
 import { t } from "@/lib/i18n/bn";
-import { saveDoctorFeatures, saveOrgFeatures } from "../../actions";
+import { saveDoctorFeatures, saveOrgFeatures, saveSmsLimit } from "../../actions";
 import { superNav } from "../../super-nav";
 
 const f = t.features;
@@ -30,6 +31,7 @@ export default async function OrgFeaturesPage({ params }: PageProps<"/super/orgs
   });
   if (!org) notFound();
   const orgFlags = resolveFeatures(org.features);
+  const month = await getOrgSmsMonth(org.id, dhakaDateString().slice(0, 7));
 
   return (
     <AppShell user={user} nav={superNav}>
@@ -76,6 +78,27 @@ export default async function OrgFeaturesPage({ params }: PageProps<"/super/orgs
                 {f.allOff}
               </button>
             </div>
+          </ActionForm>
+        </Card>
+
+        <Card aria-labelledby="sms-limit-h">
+          <h2 id="sms-limit-h" className="text-lg font-semibold">
+            {f.smsLimitTitle}
+          </h2>
+          <p className="mb-1 text-sm text-ink-muted">{f.smsLimitHint}</p>
+          <p className="mb-3 text-sm font-medium">{f.smsLimitNow(bn(month.sentSegments))}</p>
+          <ActionForm action={saveSmsLimit} resetOnSuccess={false} className="sm:max-w-sm">
+            <input type="hidden" name="orgId" value={org.id} />
+            <Field
+              name="smsMonthlyLimit"
+              label={f.smsLimitLabel}
+              inputMode="numeric"
+              defaultValue={org.smsMonthlyLimit !== null ? String(org.smsMonthlyLimit) : ""}
+              autoComplete="off"
+            />
+            <SubmitButton pendingLabel={t.common.saving} className="w-full sm:w-auto">
+              {f.smsLimitSave}
+            </SubmitButton>
           </ActionForm>
         </Card>
 

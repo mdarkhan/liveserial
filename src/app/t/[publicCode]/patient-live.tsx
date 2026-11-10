@@ -7,7 +7,9 @@ import { t } from "@/lib/i18n/bn";
 import type { PatientView } from "@/lib/snapshot";
 import { useLive } from "@/lib/use-live";
 import { LiveStatus } from "@/components/live-status";
+import { newRequestId } from "@/lib/queue";
 import { playAlert, unlockAudio } from "@/lib/sound";
+import { useBreak } from "@/lib/use-break";
 
 const p = t.patient;
 
@@ -25,7 +27,7 @@ function zoneOf(view: PatientView): Zone {
 }
 
 export function PatientLive({ code, initial }: { code: string; initial: PatientView }) {
-  const { data, mode, updatedAt } = useLive<PatientView>(
+  const { data, apply, mode, updatedAt } = useLive<PatientView>(
     `/api/live/t/${code}`,
     initial,
     (v) => v.v,
@@ -59,6 +61,8 @@ export function PatientLive({ code, initial }: { code: string; initial: PatientV
         <YourStatus view={data} />
 
         {f.PATIENT_ALERT && <AlertToggle view={data} />}
+
+        {f.PATIENT_NOT_COMING && <NotComing code={code} view={data} onView={apply} />}
 
         <footer className="space-y-1 pt-2 text-center text-sm text-ink-muted">
           <LiveStatus mode={mode} updatedAt={updatedAt} relative={f.PATIENT_UPDATED_AGO} />
@@ -192,9 +196,20 @@ function BellIcon() {
 function SessionBanner({ view }: { view: PatientView }) {
   const s = view.session;
   const scheduled = new Date(s.scheduledStartAt);
+  const timedBreak = useBreak(s.breakEndsAt, view.serverTime);
   if (s.status === "CANCELLED") return <Banner tone="danger">{p.sessionCancelled}</Banner>;
   if (s.status === "ENDED") return <Banner tone="neutral">{p.ended}</Banner>;
-  if (s.status === "ON_BREAK") return <Banner tone="warning">{p.onBreak}</Banner>;
+  if (s.status === "ON_BREAK") {
+    if (!timedBreak || !s.breakKind) return <Banner tone="warning">{p.onBreak}</Banner>;
+    const where = p.breakWhere[s.breakKind];
+    return (
+      <Banner tone="warning" big>
+        <span className="block text-xl font-bold">
+          {timedBreak.overdue ? p.breakOverdue(where) : p.breakTimed(where, timedBreak.time, timedBreak.left)}
+        </span>
+      </Banner>
+    );
+  }
   if (s.status === "NOT_STARTED" && !s.doctorArrivedAt) {
     return (
       <Banner tone="warning" big>
@@ -254,7 +269,7 @@ function YourStatus({ view }: { view: PatientView }) {
         </>
       );
     case "CANCELLED":
-      return <Banner tone="danger">{p.cancelled}</Banner>;
+      return you.notComing ? <Banner tone="neutral">{p.notComingDone}</Banner> : <Banner tone="danger">{p.cancelled}</Banner>;
     default:
       return (
         <>
@@ -288,7 +303,7 @@ function YourStatus({ view }: { view: PatientView }) {
                 {you.eta.high === 0 ? p.etaAnyMoment : p.etaRange(bn(you.eta.low), bn(you.eta.high))}
               </p>
               <p className="mt-2 text-sm text-ink-muted">
-                {p.etaNote} {!you.eta.doctorArrived && p.etaNotArrivedNote}
+                {p.etaNote} {!you.eta.doctorArrived && p.etaNotArrivedNote} {you.eta.includesBreak && p.etaIncludesBreak}
               </p>
             </section>
           )}
@@ -319,6 +334,78 @@ function Banner({
       )}
     >
       {children}
+    </div>
+  );
+}
+
+/**
+ * "আমি আসছি না": asks once, then tells the chamber. Retries with the same request
+ * id on a network error, so a double tap or a flaky connection cancels only once.
+ */
+function NotComing({ code, view, onView }: { code: string; view: PatientView; onView: (v: PatientView | null) => void }) {
+  const [step, setStep] = useState<"idle" | "ask" | "sending" | "failed">("idle");
+  const rid = useRef<string | null>(null);
+  const closed = view.session.status === "ENDED" || view.session.status === "CANCELLED";
+  if (closed || (view.you.status !== "WAITING" && view.you.status !== "SKIPPED")) return null;
+
+  const send = async () => {
+    rid.current ??= newRequestId();
+    setStep("sending");
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch(`/api/live/t/${code}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "NOT_COMING", clientRequestId: rid.current }),
+        });
+        if (res.status >= 500) throw new Error(String(res.status));
+        const json = (await res.json().catch(() => null)) as { ok?: boolean; view?: PatientView | null } | null;
+        onView(json?.view ?? null);
+        if (json?.ok) return;
+        break; // refused (e.g. already called): the fresh view explains it
+      } catch {
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+      }
+    }
+    setStep("failed");
+  };
+
+  if (step === "idle") {
+    return (
+      <div className="text-center">
+        <button
+          type="button"
+          onClick={() => setStep("ask")}
+          className="min-h-12 rounded-lg px-4 font-medium text-danger underline underline-offset-2 hover:bg-danger-soft"
+        >
+          {p.notComing}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div role="alertdialog" aria-labelledby="nc-ask" className="rounded-[var(--radius-card)] border-2 border-danger/40 bg-danger-soft p-4">
+      <p id="nc-ask" className="font-semibold text-danger">
+        {step === "failed" ? p.notComingFailed : p.notComingAsk}
+      </p>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => setStep("idle")}
+          disabled={step === "sending"}
+          className="min-h-12 rounded-lg border-2 border-line-strong bg-surface px-3 font-semibold text-ink disabled:opacity-50"
+        >
+          {p.notComingNo}
+        </button>
+        <button
+          type="button"
+          onClick={send}
+          disabled={step === "sending"}
+          className="min-h-12 rounded-lg bg-danger px-3 font-semibold text-white disabled:opacity-50"
+        >
+          {step === "sending" ? p.notComingSending : p.notComingYes}
+        </button>
+      </div>
     </div>
   );
 }

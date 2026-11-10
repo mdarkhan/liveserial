@@ -124,3 +124,18 @@ describe("computeEta — doctor not arrived", () => {
     expect(e.minutes).toBe(0);
   });
 });
+
+describe("timed break", () => {
+  it("adds the remaining break to the wait", () => {
+    const plain = computeEta(base); // 5 × 6 = 30
+    const onBreak = computeEta({ ...base, breakRemainingMinutes: 15 });
+    expect(plain.minutes).toBe(30);
+    expect(onBreak.minutes).toBe(45);
+    expect(onBreak.low).toBe(45);
+  });
+
+  it("an overdue break (0 left) or none changes nothing", () => {
+    expect(computeEta({ ...base, breakRemainingMinutes: 0 }).minutes).toBe(30);
+    expect(computeEta({ ...base, breakRemainingMinutes: null }).minutes).toBe(30);
+  });
+});
