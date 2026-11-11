@@ -2,14 +2,19 @@ import type { Metadata } from "next";
 import { DailyReportView, ReportDateForm } from "@/components/daily-report";
 import { CsvLinks, periodLabel, RangeReportView, ReportPeriodNav } from "@/components/range-report";
 import { PageHeader } from "@/components/ui";
-import { requireOrgUser } from "@/lib/access";
+import { getSessionUser, requireOrgUser } from "@/lib/access";
 import { resolveFeatures } from "@/lib/features";
 import { dateOnly, dhakaDateString, formatDate } from "@/lib/format";
 import { t } from "@/lib/i18n/bn";
 import { parsePeriod, periodRange } from "@/lib/report-period";
 import { getDailyReport, getRangeReport } from "@/lib/reports";
 
-export const metadata: Metadata = { title: t.report.title };
+/** The browser tab says which period is shown ("সাপ্তাহিক রিপোর্ট", …). */
+export async function generateMetadata({ searchParams }: PageProps<"/admin/reports">): Promise<Metadata> {
+  const user = await getSessionUser();
+  const period = resolveFeatures(user?.organization?.features).REPORTS_EXTENDED ? parsePeriod((await searchParams).period) : "day";
+  return { title: period === "week" ? t.report.weekTitle : period === "month" ? t.report.monthTitle : t.report.title };
+}
 
 /**
  * Clinic admin reports. Daily by default; with REPORTS_EXTENDED switched on by

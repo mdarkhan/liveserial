@@ -3,7 +3,7 @@ import { AppShell } from "@/components/app-shell";
 import { DailyReportView, ReportDateForm } from "@/components/daily-report";
 import { CsvLinks, periodLabel, RangeReportView, ReportPeriodNav } from "@/components/range-report";
 import { EmptyState, PageHeader } from "@/components/ui";
-import { requireOrgUser } from "@/lib/access";
+import { getSessionUser, requireOrgUser } from "@/lib/access";
 import { resolveFeatures } from "@/lib/features";
 import { dateOnly, dhakaDateString, formatDate } from "@/lib/format";
 import { t } from "@/lib/i18n/bn";
@@ -11,7 +11,14 @@ import { parsePeriod, periodRange } from "@/lib/report-period";
 import { getDailyReport, getRangeReport } from "@/lib/reports";
 import { doctorNav } from "../doctor-nav";
 
-export const metadata: Metadata = { title: t.report.ownTitle };
+/** The browser tab says which period is shown. */
+export async function generateMetadata({ searchParams }: PageProps<"/console/reports">): Promise<Metadata> {
+  const user = await getSessionUser();
+  const period = resolveFeatures(user?.organization?.features).REPORTS_EXTENDED ? parsePeriod((await searchParams).period) : "day";
+  return {
+    title: period === "week" ? t.report.ownWeekTitle : period === "month" ? t.report.ownMonthTitle : t.report.ownTitle,
+  };
+}
 
 /** A doctor's own report (their sittings only): daily, or week / month where switched on. */
 export default async function DoctorReportsPage({ searchParams }: PageProps<"/console/reports">) {

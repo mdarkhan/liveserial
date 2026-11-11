@@ -67,17 +67,17 @@ export function DisplayLive({ sessionId, initial }: { sessionId: string; initial
             : null;
 
   return (
-    <main className="flex min-h-dvh flex-col bg-surface p-[3vmin] text-ink">
+    <main id="main" tabIndex={-1} className="flex min-h-dvh flex-col bg-surface p-[3vmin] text-ink outline-none">
       <header className="flex items-start justify-between gap-4 border-b-2 border-line pb-[2vmin]">
         <div className="min-w-0">
           <h1 className="truncate text-[5vmin] font-bold leading-tight">{data.doctorName}</h1>
-          <p className="truncate text-[3vmin] text-ink-muted">{data.chamberName}</p>
+          <p className="truncate text-[max(15px,3vmin)] text-ink-muted">{data.chamberName}</p>
         </div>
         <p className="tabular shrink-0 text-[4.5vmin] font-semibold text-ink-muted">{clock}</p>
       </header>
 
       {statusText && (
-        <p className="mt-[2vmin] rounded-xl border-2 border-warning/40 bg-warning-soft px-[2vmin] py-[1.5vmin] text-center text-[4vmin] font-semibold text-warning-ink">
+        <p className="mt-[2vmin] rounded-xl border-2 border-warning/40 bg-warning-soft px-[2vmin] py-[1.5vmin] text-center text-[max(16px,4vmin)] font-semibold text-warning-ink">
           {statusText}
         </p>
       )}
@@ -87,7 +87,7 @@ export function DisplayLive({ sessionId, initial }: { sessionId: string; initial
           key={`now-${callCount}`}
           aria-label={d.nowServing}
           className={cx(
-            "flex flex-col items-center justify-center rounded-[3vmin] bg-primary p-[2vmin] text-white",
+            "flex flex-col items-center justify-center rounded-[3vmin] bg-primary p-[2vmin] text-on-primary",
             callCount > 0 && "panel-flash",
           )}
         >
@@ -118,7 +118,7 @@ export function DisplayLive({ sessionId, initial }: { sessionId: string; initial
           <section aria-label={d.next} className="flex flex-col rounded-[3vmin] border-2 border-line bg-canvas p-[2vmin]">
             <h2 className="text-center text-[5vmin] font-semibold text-ink-muted">{d.next}</h2>
             {data.next.length === 0 ? (
-              <p className="flex flex-1 items-center justify-center text-center text-[4vmin] text-ink-muted">
+              <p className="flex flex-1 items-center justify-center text-center text-[max(16px,4vmin)] text-ink-muted">
                 {d.noneWaiting}
               </p>
             ) : (
@@ -134,7 +134,7 @@ export function DisplayLive({ sessionId, initial }: { sessionId: string; initial
         )}
       </div>
 
-      <footer className="flex flex-wrap items-center justify-between gap-[1.5vmin] text-[2.2vmin] text-ink-muted">
+      <footer className="flex flex-wrap items-center justify-between gap-[1.5vmin] text-[max(14px,2.2vmin)] text-ink-muted">
         <LiveStatus mode={mode} updatedAt={updatedAt} className="justify-start" />
         {(wantsSound || f.DISPLAY_CONTROLS) && (
           <div className="flex flex-wrap items-center gap-2">
@@ -196,7 +196,7 @@ function ControlButton({
       className={cx(
         "min-h-12 rounded-lg border-2 px-4 text-base font-semibold",
         attention
-          ? "animate-pulse border-primary bg-primary text-white motion-reduce:animate-none"
+          ? "animate-pulse border-primary bg-primary text-on-primary motion-reduce:animate-none"
           : pressed
             ? "border-primary bg-primary-soft text-primary"
             : "border-line-strong bg-surface text-ink hover:bg-canvas",

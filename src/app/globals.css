@@ -18,6 +18,9 @@
   --color-primary-hover: #115e59;
   --color-primary-soft: #f0fdfa;
   --color-primary-ring: #14b8a6;
+  /* Text on a solid primary / danger background (white in light mode, near-black in dark mode). */
+  --color-on-primary: #ffffff;
+  --color-on-danger: #ffffff;
 
   --color-success: #15803d;
   --color-success-soft: #dcfce7;
@@ -35,6 +38,61 @@
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
+    color-scheme: light dark;
+  }
+
+  /*
+   * Dark mode follows the phone / computer setting. Every text/background pair
+   * was checked for WCAG contrast (≥ 4.5:1) in both themes.
+   */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-canvas: #0b1220;
+      --color-surface: #131c2e;
+      --color-ink: #e8edf5;
+      --color-ink-muted: #a9b4c6;
+      --color-line: #2a3549;
+      --color-line-strong: #7d8aa0;
+
+      --color-primary: #2dd4bf;
+      --color-primary-hover: #5eead4;
+      --color-primary-soft: #0d2f2c;
+      --color-primary-ring: #5eead4;
+      --color-on-primary: #04201d;
+
+      --color-success: #4ade80;
+      --color-success-soft: #0f2a1a;
+      --color-warning: #fbbf24;
+      --color-warning-ink: #fcd34d;
+      --color-warning-soft: #2e2109;
+      --color-danger: #f87171;
+      --color-danger-soft: #3a1414;
+      --color-on-danger: #2a0606;
+    }
+  }
+
+  /* "মূল অংশে যান": hidden until a keyboard user tabs to it. */
+  .skip-link {
+    position: absolute;
+    left: 0.75rem;
+    top: -4rem;
+    z-index: 50;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+    font-weight: 600;
+  }
+  .skip-link:focus {
+    top: 0.75rem;
+  }
+
+  /* A row that scrolls sideways inside itself without a visible scrollbar. */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
   body {
     background: var(--color-canvas);
@@ -118,4 +176,17 @@
 }
 .undo-timer {
   animation: undo-timer linear both;
+}
+
+/* Page loading: a short bar sliding across the top while the next page comes. */
+@keyframes loading-bar {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+.loading-bar {
+  animation: loading-bar 1.1s ease-in-out infinite;
 }

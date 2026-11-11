@@ -12,7 +12,7 @@ export default async function LoginPage() {
   if (user) redirect(homeFor(user.role));
 
   return (
-    <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-4 py-10">
+    <main id="main" tabIndex={-1} className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-4 py-10 outline-none">
       <div className="mb-8 text-center">
         <p className="text-3xl font-bold text-primary">{t.appName}</p>
         <p className="mt-1 text-ink-muted">{t.tagline}</p>

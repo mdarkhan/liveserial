@@ -47,7 +47,7 @@ export function PatientLive({ code, initial }: { code: string; initial: PatientV
         zone === "next" && "bg-success-soft",
       )}
     >
-      <main className="mx-auto w-full max-w-md flex-1 space-y-4 px-4 py-5">
+      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-md flex-1 space-y-4 px-4 py-5 outline-none">
         <header>
           <p className="text-sm font-semibold text-primary">{t.appName}</p>
           <h1 className="mt-1 text-2xl font-bold leading-tight">{s.doctorName}</h1>
@@ -151,7 +151,7 @@ function AlertToggle({ view }: { view: PatientView }) {
             prev.current = { ahead, called };
             setOn(true);
           }}
-          className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-lg font-semibold text-white hover:bg-primary-hover"
+          className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-lg font-semibold text-on-primary hover:bg-primary-hover"
         >
           <BellIcon /> {p.alertOn}
         </button>
@@ -326,7 +326,7 @@ function Banner({
       className={cx(
         "rounded-[var(--radius-card)] border-2 px-4 text-center font-semibold",
         big ? "py-5" : "py-3 text-lg",
-        tone === "primary" && "border-primary bg-primary text-white",
+        tone === "primary" && "border-primary bg-primary text-on-primary",
         tone === "success" && "border-success/40 bg-success-soft text-success",
         tone === "warning" && "border-warning/40 bg-warning-soft text-warning-ink",
         tone === "danger" && "border-danger/40 bg-danger-soft text-danger",
@@ -401,7 +401,7 @@ function NotComing({ code, view, onView }: { code: string; view: PatientView; on
           type="button"
           onClick={send}
           disabled={step === "sending"}
-          className="min-h-12 rounded-lg bg-danger px-3 font-semibold text-white disabled:opacity-50"
+          className="min-h-12 rounded-lg bg-danger px-3 font-semibold text-on-danger disabled:opacity-50"
         >
           {step === "sending" ? p.notComingSending : p.notComingYes}
         </button>

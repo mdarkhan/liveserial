@@ -319,7 +319,7 @@ export function ConsoleClient({
             ‹
           </Link>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-lg font-bold leading-tight">{s.doctorName}</p>
+            <h1 className="truncate text-lg font-bold leading-tight">{s.doctorName}</h1>
             <p className="truncate text-sm text-ink-muted">
               {s.chamberName} · {formatTime(new Date(s.scheduledStartAt))}
             </p>
@@ -335,7 +335,7 @@ export function ConsoleClient({
         />
       </header>
 
-      <main className="space-y-4 px-4 pt-4">
+      <main id="main" tabIndex={-1} className="space-y-4 px-4 pt-4 outline-none">
         {readOnly && <p className="rounded-lg border border-line bg-canvas px-4 py-3 text-ink-muted">{c.readOnly}</p>}
 
         <div aria-live="polite" aria-atomic="true">
@@ -521,11 +521,11 @@ export function ConsoleClient({
               <div
                 key={undo.rid}
                 role="status"
-                className="relative mb-2 flex items-center gap-3 overflow-hidden rounded-xl bg-ink px-4 py-2 text-white shadow-lg"
+                className="relative mb-2 flex items-center gap-3 overflow-hidden rounded-xl bg-ink px-4 py-2 text-canvas shadow-lg"
               >
                 <p className="min-w-0 flex-1 font-medium">
                   {c.undoAfter(undo.label)}
-                  {undo.detail && <span className="text-white/80"> · {undo.detail}</span>}
+                  {undo.detail && <span className="text-canvas/80"> · {undo.detail}</span>}
                 </p>
                 <button
                   type="button"
@@ -534,7 +534,7 @@ export function ConsoleClient({
                     navigator.vibrate?.(20);
                     act({ type: "UNDO", undoOf: offer.rid }, offer.label);
                   }}
-                  className="min-h-12 shrink-0 rounded-lg bg-white px-4 font-bold text-ink hover:bg-white/90"
+                  className="min-h-12 shrink-0 rounded-lg bg-canvas px-4 font-bold text-ink hover:bg-canvas/90"
                 >
                   {c.undo}
                 </button>
@@ -549,7 +549,7 @@ export function ConsoleClient({
               type="button"
               onClick={tapNext}
               disabled={callBusy || (!next && !current)}
-              className="flex min-h-[4.5rem] w-full flex-col items-center justify-center rounded-xl bg-primary px-4 text-white shadow-sm transition-colors hover:bg-primary-hover active:bg-primary-hover disabled:opacity-50"
+              className="flex min-h-[4.5rem] w-full flex-col items-center justify-center rounded-xl bg-primary px-4 text-on-primary shadow-sm transition-colors hover:bg-primary-hover active:bg-primary-hover disabled:opacity-50"
             >
               <span className="text-2xl font-bold">
                 {callBusy ? c.syncing : next ? c.next : current ? c.finishLast : c.nobodyWaiting}

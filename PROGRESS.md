@@ -15,6 +15,7 @@ Read [docs/BRIEF.md](docs/BRIEF.md) (requirements) and [docs/PLAN.md](docs/PLAN.
 | 6 — Optional UX features | **Done, awaiting owner review** (2026-11-10) | See "Phase 6" below. Deployed to FlyNode 2026-11-11 (commit 47a3089). |
 | 7 — Break timer, not coming, SMS cost/limit | **Done, awaiting owner review** (2026-11-10) | See "Phase 7" below. Deployed to FlyNode 2026-11-11 (commit 47a3089). |
 | 8 — Weekly/monthly reports, charts, CSV | **Done, awaiting owner review** (2026-11-11) | See "Phase 8" below. Not deployed yet. |
+| 9 — UI/UX review fixes | **Done, awaiting owner review** (2026-11-11) | See "Phase 9" below. Not deployed yet. |
 
 ## How to run (local)
 
@@ -436,6 +437,55 @@ The owner asked to go beyond the brief's daily reports.
 3. **No chart library:** two simple bar charts in SVG, to avoid a new dependency (BRIEF: ask before changing the stack). One measure per chart, never two axes.
 4. **Two CSV files:** sittings (numbers per sitting) and out-of-order calls (with patient name, reason and note, as already shown on the page to the same people). Patient phone numbers are never exported.
 5. **The doctor's report** has the same periods and CSV, limited to their own sittings.
+
+## Phase 9 — UI/UX review fixes (owner request, 2026-11-11)
+
+A review of every page at 360px (automated checks plus the code) found 10 improvements; the owner asked to fix all of them. These are not behind switches: they apply everywhere.
+
+1. **Compact staff header.**
+   - Before: 7 tabs wrapped onto two rows plus a logout row, about 227px (30% of a phone screen).
+   - Now: one compact row (app name, organization · user truncated with the full text on hover, logout), and the tabs in a single row that scrolls sideways inside itself, with a fade at the edge. The current tab is centered.
+   - Header height 117px; the page itself still never scrolls sideways.
+2. **Loading feedback:** `loading.tsx` for admin (inside the frame), console, super and the patient link. Grey page-shaped blocks and a thin moving bar appear at once on a slow connection, so a tap visibly did something.
+3. **Bangla error pages:** `error.tsx` and `global-error.tsx`. They say what happened and offer "আবার চেষ্টা করুন" and "শুরুর পাতায় যান", plus a reference code to match in the server log. This replaces the framework's English error screen.
+4. **In-app confirmation:**
+   - `SubmitButton confirm=…` now opens a Bangla dialog ("নিশ্চিত করুন" … "না, থাক" / the action), instead of the browser's English OK/Cancel.
+   - Focus starts on the safe choice; Esc or a tap outside closes it.
+   - Used for cancelling a sitting or a serial on the admin session page.
+5. **After a failed form submit,** the cursor moves to the first field with an error (or to the message, if there is no field error), and the error is read out with it.
+6. **"মূল অংশে যান" skip link:** the first Tab on every page, jumping past the header and tabs to `#main`.
+7. **Console session page:** the doctor's name is now the page's h1 (it was a plain paragraph).
+8. **TV text never gets tiny:** the screen-relative sizes have floors (14–16px). At 360px the smallest text is 14px (was 8px); big TVs are unchanged.
+9. **Report tab titles** follow the period ("সাপ্তাহিক রিপোর্ট", "মাসিক রিপোর্ট"; the doctor's "আমার …").
+10. **Dark mode:**
+    - Follows the phone/computer setting; `color-scheme` is set so date pickers and scrollbars match.
+    - Two new color tokens: text on a primary background (`on-primary`) and text on a danger background (`on-danger`). Hard-coded white was replaced by them.
+    - All 19 text/background pairs were checked: at least 4.5:1 in both themes (dark: body 14.5:1, muted 8.1:1, teal 9.2:1).
+    - The browser bar color follows the theme too.
+
+### Verified
+- tsc clean, ESLint clean, Vitest 171/171, E2E 5/5 (production build).
+- At 360px in the browser:
+  - **Header:** header 117px; tab row scrolls inside itself; no page overflow; the last tab ("SMS খরচ") centered clear of the fade.
+    - Fixed during the check: at first, the last tab sat partly under the fade.
+  - **Dark mode:** admin, console (including the undo toast, which turns light-on-dark correctly), the patient page (background #0b1220, text #e8edf5) and the TV.
+  - **Confirmation dialog:**
+    - opens with focus on "না, থাক", and the browser's `confirm()` is never called;
+    - "না" changes nothing;
+    - confirming cancelled serial ১৩ (dev data).
+  - **Failed form:** an empty name on "রোগী যোগ করুন" put the cursor in the name field, with "এটি পূরণ করুন।" attached.
+  - **Skip link:** it is the first focusable item, and activating it moves focus to `#main`. Its on-focus position rule is in place but could not be seen: the test window had no keyboard focus.
+  - **TV:** smallest text 14px at 360px.
+  - **Report tab titles:** correct.
+  - **Error page:** a temporary failing page (removed afterwards) showed the Bangla error page with both buttons and a reference code.
+  - **Loading screen:** it is sent ahead of the patient page's content.
+- **Not verified:** on a real phone with a slow connection, or with a real keyboard (the test browser's window was not focused).
+
+## Decisions (Phase 9)
+
+1. **Tabs scroll sideways** in one row rather than wrapping or hiding behind a "more" menu. Every section stays one tap away, and on desktop they simply fit.
+2. **Dark mode follows the device setting,** with no in-app switch (nothing to remember or explain to staff).
+3. **These fixes apply to everyone,** with no feature switch: they fix problems rather than add optional features.
 
 ## Known issues / notes
 

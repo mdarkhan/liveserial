@@ -12,7 +12,7 @@ type Variant = "primary" | "secondary" | "danger" | "ghost";
 type Size = "md" | "lg" | "xl";
 
 const variantClass: Record<Variant, string> = {
-  primary: "bg-primary text-white hover:bg-primary-hover active:bg-primary-hover",
+  primary: "bg-primary text-on-primary hover:bg-primary-hover active:bg-primary-hover",
   secondary: "bg-surface text-ink border-2 border-line-strong hover:bg-canvas",
   danger: "bg-surface text-danger border-2 border-danger hover:bg-danger-soft",
   ghost: "text-primary hover:bg-primary-soft",

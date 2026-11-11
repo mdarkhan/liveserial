@@ -101,7 +101,7 @@ export default async function ConsoleHome({ searchParams }: PageProps<"/console"
             aria-current={d === date ? "date" : undefined}
             className={cx(
               "inline-flex min-h-12 items-center rounded-lg border-2 px-3 font-medium",
-              d === date ? "border-primary bg-primary text-white" : "border-line bg-surface text-ink hover:bg-primary-soft",
+              d === date ? "border-primary bg-primary text-on-primary" : "border-line bg-surface text-ink hover:bg-primary-soft",
             )}
           >
             {i === 0 ? t.console.today : i === 1 ? t.console.tomorrow : `${t.weekdaysShort[weekdayOf(d)]} ${bn(Number(d.slice(8)))}`}

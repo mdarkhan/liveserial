@@ -4,6 +4,7 @@ import { createContext, useActionState, useContext, useEffect, useId, useRef, us
 import { useFormStatus } from "react-dom";
 import { Alert, buttonClass, cx } from "./ui";
 import type { ActionResult } from "@/lib/action-result";
+import { t } from "@/lib/i18n/bn";
 
 type FormState = ActionResult | null;
 const FormCtx = createContext<FormState>(null);
@@ -28,11 +29,23 @@ export function ActionForm({
   const ref = useRef<HTMLFormElement>(null);
   useEffect(() => {
     if (state?.ok && resetOnSuccess) ref.current?.reset();
+    // A failed submit: put the cursor on the first field to fix (or on the message),
+    // so phone users and screen readers land on the problem instead of the button.
+    if (state && !state.ok) {
+      const form = ref.current;
+      const target =
+        form?.querySelector<HTMLElement>('[aria-invalid="true"]') ?? form?.querySelector<HTMLElement>("[data-form-message]");
+      target?.focus();
+    }
   }, [state, resetOnSuccess]);
   return (
     <FormCtx.Provider value={state}>
       <form ref={ref} action={formAction} className={cx("space-y-4", className)} noValidate>
-        {state?.message && <Alert tone={state.ok ? "success" : "danger"}>{state.message}</Alert>}
+        {state?.message && (
+          <div data-form-message tabIndex={-1} className="outline-none">
+            <Alert tone={state.ok ? "success" : "danger"}>{state.message}</Alert>
+          </div>
+        )}
         {children}
       </form>
     </FormCtx.Provider>
@@ -179,21 +192,63 @@ export function SubmitButton({
   variant?: "primary" | "secondary" | "danger" | "ghost";
   size?: "md" | "lg" | "xl";
   className?: string;
-  /** Native confirm dialog text before submitting (for destructive actions). */
+  /** Ask this question in a Bangla dialog before submitting (for destructive actions). */
   confirm?: string;
 }) {
   const { pending } = useFormStatus();
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      aria-disabled={pending}
-      className={buttonClass(variant, size, className)}
-      onClick={(e) => {
-        if (confirm && !window.confirm(confirm)) e.preventDefault();
-      }}
-    >
-      {pending ? pendingLabel : children}
-    </button>
+    <>
+      <button
+        ref={buttonRef}
+        type="submit"
+        disabled={pending}
+        aria-disabled={pending}
+        aria-haspopup={confirm ? "dialog" : undefined}
+        className={buttonClass(variant, size, className)}
+        onClick={(e) => {
+          if (!confirm) return;
+          e.preventDefault();
+          dialogRef.current?.showModal();
+        }}
+      >
+        {pending ? pendingLabel : children}
+      </button>
+      {confirm && (
+        <dialog
+          ref={dialogRef}
+          aria-labelledby={titleId}
+          onClick={(e) => e.target === dialogRef.current && dialogRef.current?.close()}
+          className="m-auto w-[calc(100%-2rem)] max-w-sm rounded-2xl bg-surface p-0 text-ink backdrop:bg-black/50"
+        >
+          <div className="p-5">
+            <h2 id={titleId} className="text-lg font-bold">
+              {t.common.confirmTitle}
+            </h2>
+            <p className="mt-2">{confirm}</p>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              {/* type="button": these must not submit the surrounding form themselves */}
+              <button type="button" autoFocus className={buttonClass("secondary")} onClick={() => dialogRef.current?.close()}>
+                {t.common.confirmNo}
+              </button>
+              <button
+                type="button"
+                className={buttonClass(variant === "danger" ? "danger" : "primary")}
+                onClick={() => {
+                  dialogRef.current?.close();
+                  // Submits with this button as the submitter; no click event, so no second dialog.
+                  const b = buttonRef.current;
+                  b?.form?.requestSubmit(b);
+                }}
+              >
+                {children}
+              </button>
+            </div>
+          </div>
+        </dialog>
+      )}
+    </>
   );
 }

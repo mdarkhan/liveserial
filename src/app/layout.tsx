@@ -18,7 +18,10 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#0f766e",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#0f766e" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b1220" },
+  ],
 };
 
 // Everything in this app is live, per-request data.
@@ -27,7 +30,13 @@ export const dynamic = "force-dynamic";
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="bn" className={`${bangla.variable} h-full antialiased`}>
-      <body className="min-h-dvh flex flex-col">{children}</body>
+      <body className="min-h-dvh flex flex-col">
+        {/* Keyboard users jump past the header and tabs straight to the page. */}
+        <a href="#main" className="skip-link">
+          {t.common.skipToMain}
+        </a>
+        {children}
+      </body>
     </html>
   );
 }

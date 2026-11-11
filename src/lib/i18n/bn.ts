@@ -35,6 +35,15 @@ export const bnDict = {
     somethingWrong: "কিছু একটা ভুল হয়েছে। আবার চেষ্টা করুন।",
     notFound: "পাওয়া যায়নি",
     noAccess: "এই পাতায় আপনার প্রবেশাধিকার নেই।",
+    skipToMain: "মূল অংশে যান",
+    loading: "লোড হচ্ছে…",
+    errorTitle: "কিছু একটা সমস্যা হয়েছে",
+    errorBody: "পাতাটি এখন দেখানো যাচ্ছে না। আবার চেষ্টা করুন; না হলে কিছুক্ষণ পরে আবার আসুন।",
+    retry: "আবার চেষ্টা করুন",
+    goHome: "শুরুর পাতায় যান",
+    errorRef: (code: string) => `সমস্যার কোড: ${code}`,
+    confirmTitle: "নিশ্চিত করুন",
+    confirmNo: "না, থাক",
   },
 
   auth: {
@@ -88,6 +97,7 @@ export const bnDict = {
     reports: "রিপোর্ট",
     smsUsage: "SMS ব্যবহার",
     smsCost: "SMS খরচ",
+    sections: "পাতাগুলো",
   },
 
   org: {
