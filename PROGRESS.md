@@ -14,8 +14,8 @@ Read [docs/BRIEF.md](docs/BRIEF.md) (requirements) and [docs/PLAN.md](docs/PLAN.
 | 5 — Admin and deploy | **Done, awaiting owner review** (2026-11-10) | See "Phase 5" below. Deployed to FlyNode 2026-11-10 (see "Deployment"). |
 | 6 — Optional UX features | **Done, awaiting owner review** (2026-11-10) | See "Phase 6" below. Deployed to FlyNode 2026-11-11 (commit 47a3089). |
 | 7 — Break timer, not coming, SMS cost/limit | **Done, awaiting owner review** (2026-11-10) | See "Phase 7" below. Deployed to FlyNode 2026-11-11 (commit 47a3089). |
-| 8 — Weekly/monthly reports, charts, CSV | **Done, awaiting owner review** (2026-11-11) | See "Phase 8" below. Not deployed yet. |
-| 9 — UI/UX review fixes | **Done, awaiting owner review** (2026-11-11) | See "Phase 9" below. Not deployed yet. |
+| 8 — Weekly/monthly reports, charts, CSV | **Done, awaiting owner review** (2026-11-11) | See "Phase 8" below. Deployed to FlyNode 2026-11-11. |
+| 9 — UI/UX review fixes | **Done, awaiting owner review** (2026-11-11) | See "Phase 9" below. Phases 8–9 deployed to FlyNode 2026-11-11. |
 
 ## How to run (local)
 
@@ -446,7 +446,7 @@ A review of every page at 360px (automated checks plus the code) found 10 improv
    - Before: 7 tabs wrapped onto two rows plus a logout row, about 227px (30% of a phone screen).
    - Now: one compact row (app name, organization · user truncated with the full text on hover, logout), and the tabs in a single row that scrolls sideways inside itself, with a fade at the edge. The current tab is centered.
    - Header height 117px; the page itself still never scrolls sideways.
-2. **Loading feedback:** `loading.tsx` for admin (inside the frame), console, super and the patient link. Grey page-shaped blocks and a thin moving bar appear at once on a slow connection, so a tap visibly did something.
+2. **Loading feedback:** `loading.tsx` for admin (inside the frame), console and super. Grey page-shaped blocks and a thin moving bar appear at once on a slow connection, so a tap visibly did something. Not on the patient link: a loading screen there sends status 200 before the server knows the link is unknown, and that page is a single fast lookup anyway (found after deploying; removed so unknown links return 404 again).
 3. **Bangla error pages:** `error.tsx` and `global-error.tsx`. They say what happened and offer "আবার চেষ্টা করুন" and "শুরুর পাতায় যান", plus a reference code to match in the server log. This replaces the framework's English error screen.
 4. **In-app confirmation:**
    - `SubmitButton confirm=…` now opens a Bangla dialog ("নিশ্চিত করুন" … "না, থাক" / the action), instead of the browser's English OK/Cancel.
@@ -478,7 +478,7 @@ A review of every page at 360px (automated checks plus the code) found 10 improv
   - **TV:** smallest text 14px at 360px.
   - **Report tab titles:** correct.
   - **Error page:** a temporary failing page (removed afterwards) showed the Bangla error page with both buttons and a reference code.
-  - **Loading screen:** it is sent ahead of the patient page's content.
+  - **Loading screen:** checked on the patient page, then removed there (see item 2).
 - **Not verified:** on a real phone with a slow connection, or with a real keyboard (the test browser's window was not focused).
 
 ## Decisions (Phase 9)
