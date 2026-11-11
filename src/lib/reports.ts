@@ -1,5 +1,5 @@
 import { prisma } from "./db";
-import { dateOnly, dhakaWallTimeToUtc } from "./format";
+import { addDays, dateOnly, dhakaWallTimeToUtc, ymdOf } from "./format";
 import { consultMinutes } from "./snapshot";
 import type { OutOfOrderReason, SessionStatus, SmsStatus, TokenStatus } from "@/generated/prisma/enums";
 
@@ -106,29 +106,57 @@ export type OutOfOrderRow = {
   jumpedSerials: number[];
 };
 
+export type ReportSession = {
+  id: string;
+  /** Dhaka calendar date of the sitting, "YYYY-MM-DD". */
+  date: string;
+  doctorId: string;
+  doctorName: string;
+  chamberName: string;
+  scheduledStartAt: Date;
+  status: SessionStatus;
+  summary: SessionSummary;
+  outOfOrder: number;
+};
+
+export type ReportTotals = ReturnType<typeof summarizeDay>;
+
 export type DailyReport = {
-  sessions: Array<{
-    id: string;
-    doctorName: string;
-    chamberName: string;
-    scheduledStartAt: Date;
-    status: SessionStatus;
-    summary: SessionSummary;
-    outOfOrder: number;
-  }>;
-  totals: ReturnType<typeof summarizeDay>;
+  sessions: ReportSession[];
+  totals: ReportTotals;
   outOfOrder: OutOfOrderRow[];
 };
 
+export type RangeDay = ReportTotals & { date: string; sessions: number; outOfOrder: number };
+export type RangeDoctor = ReportTotals & { doctorId: string; doctorName: string; sessions: number; outOfOrder: number };
+
+export type RangeReport = DailyReport & {
+  from: string;
+  to: string;
+  /** Every calendar day in the range, oldest first (days without sittings have zeros). */
+  days: RangeDay[];
+  /** One row per doctor who had sittings, most patients first. */
+  doctors: RangeDoctor[];
+};
+
+/** Every "YYYY-MM-DD" from `from` to `to`, inclusive. */
+export function daysBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  for (let d = from; d <= to && out.length < 400; d = addDays(d, 1)) out.push(d);
+  return out;
+}
+
 /**
- * One Dhaka calendar day for an organization. `doctorId` limits it to one
- * doctor (a doctor's own report). Cancelled sittings are left out.
+ * The organization's sittings between two Dhaka dates (inclusive), with
+ * per-session, per-day and per-doctor summaries and the out-of-order calls.
+ * `doctorId` limits it to one doctor (a doctor's own report). Cancelled
+ * sittings and undone out-of-order calls are left out.
  */
-export async function getDailyReport(orgId: string, date: string, doctorId?: string): Promise<DailyReport> {
+export async function getRangeReport(orgId: string, from: string, to: string, doctorId?: string): Promise<RangeReport> {
   const sessions = await prisma.session.findMany({
     where: {
       organizationId: orgId,
-      date: dateOnly(date),
+      date: { gte: dateOnly(from), lte: dateOnly(to) },
       status: { not: "CANCELLED" },
       ...(doctorId ? { doctorId } : {}),
     },
@@ -163,19 +191,42 @@ export async function getDailyReport(orgId: string, date: string, doctorId?: str
   });
 
   const doctorOf = new Map(sessions.map((s) => [s.id, s.doctor.name]));
-  const rows = sessions.map((s) => ({
+  const oooBySession = new Map<string, number>();
+  for (const e of events) oooBySession.set(e.sessionId, (oooBySession.get(e.sessionId) ?? 0) + 1);
+
+  const rows: ReportSession[] = sessions.map((s) => ({
     id: s.id,
+    date: ymdOf(s.date),
+    doctorId: s.doctorId,
     doctorName: s.doctor.name,
     chamberName: s.chamber.name,
     scheduledStartAt: s.scheduledStartAt,
     status: s.status,
     summary: summarizeSession(s, s.tokens),
-    outOfOrder: events.filter((e) => e.sessionId === s.id).length,
+    outOfOrder: oooBySession.get(s.id) ?? 0,
   }));
 
+  const group = (list: ReportSession[]) => ({
+    ...summarizeDay(list.map((r) => r.summary)),
+    sessions: list.length,
+    outOfOrder: list.reduce((a, r) => a + r.outOfOrder, 0),
+  });
+  const days: RangeDay[] = daysBetween(from, to).map((date) => ({ date, ...group(rows.filter((r) => r.date === date)) }));
+  const doctorIds = [...new Set(rows.map((r) => r.doctorId))];
+  const doctors: RangeDoctor[] = doctorIds
+    .map((id) => {
+      const list = rows.filter((r) => r.doctorId === id);
+      return { doctorId: id, doctorName: list[0].doctorName, ...group(list) };
+    })
+    .sort((a, b) => b.served - a.served || a.doctorName.localeCompare(b.doctorName));
+
   return {
+    from,
+    to,
     sessions: rows,
     totals: summarizeDay(rows.map((r) => r.summary)),
+    days,
+    doctors,
     outOfOrder: events.map((e) => ({
       id: String(e.id),
       at: e.createdAt,
@@ -188,6 +239,12 @@ export async function getDailyReport(orgId: string, date: string, doctorId?: str
       jumpedSerials: ((e.meta ?? {}) as { jumpedSerials?: number[] }).jumpedSerials ?? [],
     })),
   };
+}
+
+/** One Dhaka calendar day (see getRangeReport). */
+export async function getDailyReport(orgId: string, date: string, doctorId?: string): Promise<DailyReport> {
+  const r = await getRangeReport(orgId, date, date, doctorId);
+  return { sessions: r.sessions, totals: r.totals, outOfOrder: r.outOfOrder };
 }
 
 export type SmsUsageRow = {

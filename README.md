@@ -19,7 +19,7 @@ Live queue and wait-time estimate for doctor chambers in Bangladesh. Patients op
 
 ## Optional features
 
-Twelve extras are switched on by the super admin per organization (`/super/orgs/<id>`), with per-doctor overrides. All of them are off until switched on:
+Thirteen extras are switched on by the super admin per organization (`/super/orgs/<id>`), with per-doctor overrides. All of them are off until switched on:
 
 - **Patient page:** progress bar and "get ready", sound and vibration alert, "updated … seconds ago", and an "আমি আসছি না" (not coming) button.
 - **Waiting-room TV:** chime and pop animation, Bangla announcement, big-number and fullscreen buttons.
@@ -29,6 +29,7 @@ Twelve extras are switched on by the super admin per organization (`/super/orgs/
   - install on home screen;
   - timed break ("নামাজ, ১৫ মিনিট"), shown to patients and on the TV and added to the wait estimate;
   - SMS cost preview, with an "SMS খরচ" page for the clinic admin.
+- **Reports:** weekly and monthly reports (Saturday–Friday weeks) with daily charts, per-doctor totals, and CSV download for Excel (`/api/reports/csv`). This applies to clinic admins and to doctors (own sittings only).
 
 The same page sets each organization's **monthly SMS limit** (in billable parts). `/super` and `/super/sms` warn from 80% and when it is exceeded. Sending is never blocked.
 

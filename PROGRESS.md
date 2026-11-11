@@ -14,6 +14,7 @@ Read [docs/BRIEF.md](docs/BRIEF.md) (requirements) and [docs/PLAN.md](docs/PLAN.
 | 5 — Admin and deploy | **Done, awaiting owner review** (2026-11-10) | See "Phase 5" below. Deployed to FlyNode 2026-11-10 (see "Deployment"). |
 | 6 — Optional UX features | **Done, awaiting owner review** (2026-11-10) | See "Phase 6" below. Deployed to FlyNode 2026-11-11 (commit 47a3089). |
 | 7 — Break timer, not coming, SMS cost/limit | **Done, awaiting owner review** (2026-11-10) | See "Phase 7" below. Deployed to FlyNode 2026-11-11 (commit 47a3089). |
+| 8 — Weekly/monthly reports, charts, CSV | **Done, awaiting owner review** (2026-11-11) | See "Phase 8" below. Not deployed yet. |
 
 ## How to run (local)
 
@@ -385,6 +386,56 @@ Three new switches go on the super admin's feature page, and there is a monthly 
 5. **SMS cost preview is organization-only:** the admin page is per clinic, and the console lines show for all its doctors.
 
 **Finding for the owner:** with the current templates, every automatic SMS (serial, "রওনা দিন", "পরের জন", delay) is over 70 characters, so each costs 2 parts. The live address (`nt2dfm9rvn96knb7lgaurxm6.flynode.io`) is even longer than the dev one. A short custom domain (Q8) and/or shorter template wording would roughly halve SMS cost. Not changed: wording and domain are the owner's call.
+
+## Phase 8 — weekly / monthly reports, charts, CSV (owner request, 2026-11-11)
+
+The owner asked to go beyond the brief's daily reports.
+
+- **Switch:** `REPORTS_EXTENDED`, organization-only, in a new "রিপোর্ট" group on the super admin's feature page. Off = the reports pages stay exactly as before (daily only, no CSV).
+- **Report pages:** `/admin/reports` (clinic admin, whole organization) and `/console/reports` (doctor, own sittings).
+  - "দিন / সপ্তাহ / মাস" tabs, a date (or month) picker, and "আগের / পরের".
+  - Nothing past today. A week runs Saturday → Friday.
+  - Periods: `src/lib/report-period.ts`.
+- **Week / month view** (`src/components/range-report.tsx`):
+  - totals (served / booked, sittings, average wait, average consultation, doctor's average lateness, no-shows, out-of-order);
+  - two daily bar charts (patients seen, average wait);
+  - a per-day table;
+  - per-doctor totals (admin only);
+  - every out-of-order call with its date and reason.
+  - The charts are plain SVG: no new library. Single series in the brand color, a hover tooltip per day, a label on the highest bar, and the table as the data view.
+- **Query:** `getRangeReport(orgId, from, to, doctorId?)` in `reports.ts`.
+  - It returns per sitting, per day (every day, zeros included) and per doctor; averages are weighted by patient, as in the daily report.
+  - The daily report is now the one-day case of it (same output; existing tests unchanged and passing).
+- **CSV export:** `GET /api/reports/csv?kind=sessions|out-of-order&period=…&date=…` (`src/lib/csv.ts`).
+  - UTF-8 with a BOM and CRLF, so Excel shows Bangla. Bangla headers.
+  - ASCII numbers, dates `YYYY-MM-DD` and 24 h Dhaka times, so the numbers can be added up.
+  - Text that starts with `= + - @` gets a leading `'`, so a spreadsheet never runs a typed name as a formula.
+  - Access: clinic admin for the organization, doctor for their own sittings; 403 when the switch is off.
+
+### Verified
+- tsc clean, ESLint clean.
+- Vitest 171/171, twice (17 new). They cover:
+  - periods: week start, cut at today, month and year boundaries, bad or future anchors;
+  - CSV: quoting, formula guard, BOM/CRLF, Dhaka time, both CSV kinds;
+  - a 7-day range: zeros on empty days, cancelled sittings and other weeks left out, per-doctor order and averages, a doctor's own range, organization scope, CSV rows.
+- E2E 5/5 (production build).
+- Click-through at 360px on the dev DB (switch set directly in the dev DB):
+  - **Admin week/month:** totals, charts and table, two doctors, CSV links.
+  - **Fixed — period controls:** previous/next and the date picker wrapped messily, so the picker now has its own row.
+  - **Fixed — chart shape:** a week's chart stretched very tall, because the drawing width followed the number of days. It now has a fixed shape (141px tall at 360px), and the day labels are slightly larger.
+  - **Admin day view:** same as before, plus CSV.
+  - **CSV download:** starts with the bytes EF BB BF; correct rows; 403 with the switch off, and then the page shows only the daily report.
+  - **Doctor's month view:** only their own sitting; no per-doctor section; the CSV contains only their rows.
+  - No horizontal scroll on any page.
+- **Not verified:** opening the CSV in real Excel or Google Sheets (only the bytes and rows were checked).
+
+## Decisions (Phase 8)
+
+1. **Behind a switch, like the other extras.** The brief said daily reports; the owner asked for more, so organizations get it when the super admin turns it on.
+2. **Week = Saturday to Friday** (the Bangladesh work week). Periods never go past today; the current week or month is shown up to today.
+3. **No chart library:** two simple bar charts in SVG, to avoid a new dependency (BRIEF: ask before changing the stack). One measure per chart, never two axes.
+4. **Two CSV files:** sittings (numbers per sitting) and out-of-order calls (with patient name, reason and note, as already shown on the page to the same people). Patient phone numbers are never exported.
+5. **The doctor's report** has the same periods and CSV, limited to their own sittings.
 
 ## Known issues / notes
 

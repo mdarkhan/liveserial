@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { Badge, buttonClass, Card, EmptyState, List, ListItem } from "@/components/ui";
-import { bn, formatTime } from "@/lib/format";
+import { bn, formatDateShort, formatTime } from "@/lib/format";
 import { t } from "@/lib/i18n/bn";
-import type { DailyReport } from "@/lib/reports";
+import type { DailyReport, OutOfOrderRow } from "@/lib/reports";
 import { sessionTone } from "@/lib/status";
 
 const r = t.report;
 
-function mins(m: number | null): string {
+export function mins(m: number | null): string {
   return m === null ? r.noData : r.minutes(bn(m));
 }
 
@@ -17,7 +17,7 @@ function late(m: number | null): string {
   return m <= 0 ? r.onTime : r.minutes(bn(m));
 }
 
-function Stat({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+export function Stat({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
   return (
     <div className="rounded-lg border border-line bg-canvas px-3 py-2">
       <dt className="text-sm text-ink-muted">{label}</dt>
@@ -110,39 +110,54 @@ export function DailyReportView({
         <h2 id="ooo-h" className="mb-2 text-lg font-semibold">
           {r.outOfOrderTitle}
         </h2>
-        {report.outOfOrder.length === 0 ? (
-          <EmptyState>{r.outOfOrderNone}</EmptyState>
-        ) : (
-          <List>
-            {report.outOfOrder.map((e) => (
-              <ListItem key={e.id} className="border-l-4 border-warning bg-warning-soft">
-                <div className="min-w-0 flex-1">
-                  <p className="font-bold text-warning-ink">
-                    <span aria-hidden="true">⚠ </span>
-                    {t.token.serial} {e.serial === null ? r.noData : bn(e.serial)}
-                    {e.patientName && <span className="font-medium"> · {e.patientName}</span>}
-                  </p>
-                  <p>
-                    {t.audit.reason}: <strong>{e.reason ? t.console.reasons[e.reason] : t.common.none}</strong>
-                    {e.note && <> — “{e.note}”</>}
-                  </p>
-                  {e.jumpedSerials.length > 0 && (
-                    <p className="text-sm">
-                      {t.audit.jumped}: {e.jumpedSerials.map((n) => bn(n)).join(", ")}
-                    </p>
-                  )}
-                  <p className="text-sm text-ink-muted">
-                    <span className="tabular">{formatTime(e.at)}</span> · {e.doctorName} · {r.calledBy}:{" "}
-                    {e.actorName ?? t.audit.system}
-                  </p>
-                </div>
-              </ListItem>
-            ))}
-          </List>
-        )}
+        <OutOfOrderList items={report.outOfOrder} empty={r.outOfOrderNone} />
       </section>
 
       <p className="text-sm text-ink-muted">{r.waitNote}</p>
     </div>
+  );
+}
+
+/** Out-of-order calls with reason, note, who was jumped, time, doctor and caller. */
+export function OutOfOrderList({
+  items,
+  empty,
+  showDate,
+}: {
+  items: OutOfOrderRow[];
+  empty: string;
+  showDate?: boolean;
+}) {
+  if (items.length === 0) return <EmptyState>{empty}</EmptyState>;
+  return (
+    <List>
+      {items.map((e) => (
+        <ListItem key={e.id} className="border-l-4 border-warning bg-warning-soft">
+          <div className="min-w-0 flex-1">
+            <p className="font-bold text-warning-ink">
+              <span aria-hidden="true">⚠ </span>
+              {t.token.serial} {e.serial === null ? r.noData : bn(e.serial)}
+              {e.patientName && <span className="font-medium"> · {e.patientName}</span>}
+            </p>
+            <p>
+              {t.audit.reason}: <strong>{e.reason ? t.console.reasons[e.reason] : t.common.none}</strong>
+              {e.note && <> — “{e.note}”</>}
+            </p>
+            {e.jumpedSerials.length > 0 && (
+              <p className="text-sm">
+                {t.audit.jumped}: {e.jumpedSerials.map((n) => bn(n)).join(", ")}
+              </p>
+            )}
+            <p className="text-sm text-ink-muted">
+              <span className="tabular">
+                {showDate && <>{formatDateShort(e.at)} · </>}
+                {formatTime(e.at)}
+              </span>{" "}
+              · {e.doctorName} · {r.calledBy}: {e.actorName ?? t.audit.system}
+            </p>
+          </div>
+        </ListItem>
+      ))}
+    </List>
   );
 }
